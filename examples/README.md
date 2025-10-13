@@ -22,6 +22,42 @@ python examples/simple_example.py
 - Top important features identified by SHAP
 - Interpretability metrics (stability, fidelity, complexity)
 
+### dependence_plot_example.py
+
+Demonstrates SHAP dependence plots showing feature effects:
+1. Train a model on breast cancer dataset
+2. Generate SHAP explanations
+3. Create dependence plots for top features
+4. Show feature interactions
+
+**Run it:**
+```bash
+python examples/dependence_plot_example.py
+```
+
+**Expected output:**
+- Dependence plots saved to `results/dependence_plots/`
+- Shows how features affect predictions
+- Reveals feature interactions through color coding
+
+### waterfall_plot_example.py
+
+Demonstrates SHAP waterfall plots (Shapley flow) for individual predictions:
+1. Train a model on breast cancer dataset
+2. Generate SHAP explanations
+3. Create waterfall plots for multiple instances
+4. Show how features push predictions from base value to final prediction
+
+**Run it:**
+```bash
+python examples/waterfall_plot_example.py
+```
+
+**Expected output:**
+- Waterfall plots saved to `results/waterfall_plots/`
+- Visualizes feature contributions for individual predictions
+- Shows the "flow" of Shapley values from base to final prediction
+
 ## Creating Your Own Examples
 
 You can create custom examples by following this pattern:

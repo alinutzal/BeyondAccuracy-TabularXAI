@@ -62,6 +62,7 @@ BeyondAccuracy-TabularXAI/
    - Model-agnostic explanations based on game theory
    - Feature importance through Shapley values
    - Global and local interpretability
+   - Waterfall plots (Shapley flow) for individual predictions
 
 2. **LIME (Local Interpretable Model-agnostic Explanations)**:
    - Local approximations with interpretable models
@@ -214,6 +215,30 @@ def new_metric(explanations, ...):
     # Calculate metric
     return score
 ```
+
+### Using SHAP Waterfall Plots (Shapley Flow)
+
+Waterfall plots visualize how individual feature values push predictions from the base value to the final prediction:
+
+```python
+from explainability import SHAPExplainer
+
+# Initialize explainer
+shap_explainer = SHAPExplainer(model, X_train, model_type='tree')
+
+# Generate explanations
+shap_explainer.explain(X_test)
+
+# Create waterfall plot for a specific instance
+instance = X_test.iloc[0]
+shap_explainer.plot_waterfall(
+    instance,
+    max_display=10,
+    save_path='waterfall_plot.png'
+)
+```
+
+For a complete example, see `examples/waterfall_plot_example.py`.
 
 ## Citation
 
