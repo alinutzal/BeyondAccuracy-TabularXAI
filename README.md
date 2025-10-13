@@ -122,6 +122,14 @@ python run_experiments.py breast_cancer XGBoost
 - `LightGBM`
 - `Transformer`
 
+#### Skipping duplicate experiments:
+By default, if results already exist for a dataset-model combination, the experiment will be skipped. To force rerunning:
+```bash
+cd src
+python run_experiments.py --rerun  # Rerun all experiments
+python run_experiments.py breast_cancer XGBoost --rerun  # Rerun specific experiment
+```
+
 ### Using Jupyter Notebooks
 
 Start Jupyter:
@@ -143,6 +151,7 @@ results/
 │   ├── results.json                  # Metrics and metadata
 │   ├── shap_summary.png              # SHAP summary plot
 │   ├── shap_importance.png           # SHAP feature importance
+│   ├── shap_dependence_*.png         # SHAP dependence plots for top features
 │   ├── lime_importance.png           # LIME feature importance
 │   ├── shap_feature_importance.csv   # SHAP importance scores
 │   └── lime_feature_importance.csv   # LIME importance scores
