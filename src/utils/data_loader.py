@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from sklearn.datasets import fetch_openml, load_breast_cancer, load_wine
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import StandardScaler, LabelEncoder, QuantileTransformer
 from typing import Tuple, Dict, Any
 import os
 
@@ -73,8 +73,19 @@ class DataLoader:
             self.categorical_features = X.select_dtypes(include=['object', 'category']).columns.tolist()
             self.numerical_features = X.select_dtypes(include=[np.number]).columns.tolist()
             
-            # Handle categorical features - encode them
+            # Handle categorical features - apply rare category bucketing and encode
             for col in self.categorical_features:
+                # Calculate value counts
+                value_counts = X[col].value_counts()
+                # Find rare categories (< 1% of data)
+                rare_threshold = len(X) * 0.01
+                rare_categories = value_counts[value_counts < rare_threshold].index.tolist()
+                
+                # Replace rare categories with 'other'
+                if rare_categories:
+                    X[col] = X[col].apply(lambda x: 'other' if x in rare_categories else x)
+                
+                # Encode categorical features
                 X[col] = LabelEncoder().fit_transform(X[col].astype(str))
             
             self.feature_names = X.columns.tolist()
@@ -148,7 +159,12 @@ class DataLoader:
         
         scaler = None
         if scale_features:
-            scaler = StandardScaler()
+            # Use QuantileTransformer with normal distribution for adult_income dataset
+            if self.dataset_name == 'adult_income' and self.numerical_features:
+                scaler = QuantileTransformer(output_distribution='normal', random_state=self.random_state)
+            else:
+                scaler = StandardScaler()
+            
             X_train = pd.DataFrame(
                 scaler.fit_transform(X_train),
                 columns=X_train.columns,
