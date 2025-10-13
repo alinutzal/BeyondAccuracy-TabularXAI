@@ -49,7 +49,7 @@ python run_experiments.py
 
 This will run experiments for:
 - 3 datasets: breast_cancer, adult_income, bank_marketing
-- 3 models: XGBoost, LightGBM, Transformer
+- 4 models: XGBoost, LightGBM, TabPFN, Transformer
 
 Results will be saved in the `results/` directory, with a summary in `results/summary.csv`.
 
