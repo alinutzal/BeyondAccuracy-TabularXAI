@@ -1,37 +1,29 @@
-feature_tokenizer:
-  numeric:
-    scaler: learnable_linear
-    quantile_embedding:
-      enabled: false
-  categorical:
-    embedding_dim: 32
-  column_id_embedding_dim: 32
-  type_embedding_dim: 16
+d_model: 128
+nhead: 4
+num_layers: 2
+dim_feedforward: 256
+dropout: 0.4
+weight_decay: 5e-4
 
-transformer:
-  d_model: 256
-  nhead: 4
-  num_layers: 6
-  dim_feedforward: 640
-  ffn_activation: geglu
-  dropout: 0.35
-  stochastic_depth: 0.15
+mixup:
+  enabled: false
+  alpha: 0.0
 
-gating_tower:
+gaussian_noise:
   enabled: true
-  hidden_dim: 256
-  residual: true
+  std: 0.01  # σ=0.01-0.02 for tiny Gaussian noise on numerics during training
 
-loss:
-  type: focal
-  focal_gamma: 2.0
+label_smoothing: 0.02
 
 optimizer:
   name: AdamW
   lr: 1e-3
   betas: [0.9, 0.999]
   eps: 1e-8
-  weight_decay: 5e-4
+
+swa:
+  enabled: true
+  final_epochs: 30
 
 scheduler:
   name: cosine
@@ -47,21 +39,11 @@ training:
     patience: 50
   auto_device: true
 
-swa:
-  enabled: true
-  final_epochs: 30
-
-monitoring:
-  metrics: [pr_auc, brier_score]
-
-post_train:
-  isotonic_calibration: true
-  calibration_holdout_fraction: 0.1
-
 random_seed: 42
 
 notes: |
-  Transformer for breast cancer: d_model=256, heads=4, depth=6, FFN=640, GEGLU, dropout=0.35,
-  stochastic_depth=0.15. Small gating tower (two-layer MLP 256->1 with residual) on top for
-  calibration. Loss uses focal (gamma=2) or weighted BCE. Monitor PR-AUC and Brier; run isotonic
-  calibration post-train on a held-out fold if business thresholds require it.
+  Simplified Transformer for breast cancer (tiny dataset, n=569): d_model=128, heads=4, layers=2,
+  FFN=256, dropout=0.4, weight decay=5e-4. Keep it tiny; MLP > Transformer on this dataset unless
+  you add synthetic features. AdamW lr=1e-3, cosine scheduler, 300 epochs with early stopping
+  (patience=50). Label smoothing=0.02, Gaussian noise (σ=0.01) for augmentation. SWA last 30 epochs.
+  MixUp disabled (not needed for this tiny dataset). Expect parity with MLP, not dominance.
