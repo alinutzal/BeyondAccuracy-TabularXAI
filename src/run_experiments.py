@@ -11,7 +11,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from utils.data_loader import DataLoader
-from models import XGBoostClassifier, LightGBMClassifier, MLPClassifier, TransformerClassifier
+from models import XGBoostClassifier, LightGBMClassifier, TabPFNClassifier, MLPClassifier, TransformerClassifier
 from explainability import SHAPExplainer, LIMEExplainer
 from metrics import InterpretabilityMetrics
 
@@ -89,6 +89,9 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
     elif model_name == 'LightGBM':
         model = LightGBMClassifier(n_estimators=100, max_depth=6, random_state=42)
         model_type = 'tree'
+    elif model_name == 'TabPFN':
+        model = TabPFNClassifier(device='cpu', N_ensemble_configurations=32)
+        model_type = 'tree'  # TabPFN can work with tree-based explainers
     elif model_name == 'MLP':
         model = MLPClassifier(hidden_dims=[128, 64, 32], epochs=100, batch_size=32)
         model_type = 'deep'
@@ -298,7 +301,7 @@ def run_all_experiments(results_dir: str = '../results', rerun: bool = False):
         rerun: If False and results already exist, skip the experiment. If True, rerun regardless.
     """
     datasets = ['breast_cancer', 'adult_income', 'bank_marketing']
-    models = ['XGBoost', 'LightGBM', 'MLP','Transformer']
+    models = ['XGBoost', 'LightGBM', 'TabPFN', 'MLP', 'Transformer']
     
     all_results = []
     

@@ -7,9 +7,10 @@ This project implements a comprehensive framework for evaluating gradient boosti
 
 ### What Was Implemented
 
-#### 1. Three Classification Models
+#### 1. Four Classification Models
 - ✅ **XGBoost**: Industry-standard gradient boosting with tree-based learning
-- ✅ **LightGBM**: Efficient gradient boosting with histogram-based learning  
+- ✅ **LightGBM**: Efficient gradient boosting with histogram-based learning
+- ✅ **TabPFN**: Prior-Fitted Networks with transformer-based in-context learning
 - ✅ **Transformer**: Attention-based deep learning architecture for tabular data
 
 #### 2. Three Diverse Tabular Datasets
@@ -34,7 +35,7 @@ This project implements a comprehensive framework for evaluating gradient boosti
 BeyondAccuracy-TabularXAI/
 ├── src/                          # Source code
 │   ├── models/                   # Model implementations
-│   │   ├── gradient_boosting.py  # XGBoost & LightGBM
+│   │   ├── gradient_boosting.py  # XGBoost, LightGBM & TabPFN
 │   │   └── deep_learning.py      # MLP & Transformer
 │   ├── explainability/           # Explainability modules
 │   │   ├── shap_explainer.py     # SHAP implementation

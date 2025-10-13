@@ -6,7 +6,7 @@ Beyond Accuracy: A Comprehensive Comparative Study of Gradient Boosting and Expl
 
 This repository contains a complete implementation to reproduce and extend experiments comparing gradient boosting methods, deep learning models, and explainability techniques on tabular datasets. The project implements:
 
-- **3 Gradient Boosting & Deep Learning Models**: XGBoost, LightGBM, and Transformer-based architectures
+- **4 Gradient Boosting & Deep Learning Models**: XGBoost, LightGBM, TabPFN, and Transformer-based architectures
 - **3 Diverse Tabular Datasets**: Breast Cancer, Adult Income, and Bank Marketing
 - **2 Explainability Methods**: SHAP and LIME
 - **Rigorous Interpretability Metrics**: Feature importance stability, explanation consistency, feature agreement, explanation fidelity, and complexity
@@ -18,7 +18,7 @@ BeyondAccuracy-TabularXAI/
 ├── src/
 │   ├── models/
 │   │   ├── __init__.py
-│   │   ├── gradient_boosting.py      # XGBoost and LightGBM implementations
+│   │   ├── gradient_boosting.py      # XGBoost, LightGBM, and TabPFN implementations
 │   │   └── deep_learning.py          # MLP and Transformer implementations
 │   ├── explainability/
 │   │   ├── __init__.py
@@ -48,7 +48,8 @@ BeyondAccuracy-TabularXAI/
 
 1. **XGBoost**: Industry-standard gradient boosting with tree-based learning
 2. **LightGBM**: Efficient gradient boosting with histogram-based learning
-3. **Transformer**: Attention-based deep learning architecture for tabular data
+3. **TabPFN**: Prior-Fitted Networks - transformer-based model with in-context learning for small tabular datasets
+4. **Transformer**: Attention-based deep learning architecture for tabular data
 
 ### Datasets
 
@@ -121,6 +122,7 @@ python run_experiments.py breast_cancer XGBoost
 #### Available models:
 - `XGBoost`
 - `LightGBM`
+- `TabPFN`
 - `Transformer`
 
 #### Skipping duplicate experiments:
