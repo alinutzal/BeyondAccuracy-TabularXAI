@@ -64,14 +64,17 @@ class MLPClassifier:
 
     This implementation accepts configuration keys from YAML such as:
     - hidden_dims: list of layer sizes
-    - activation: 'geglu' or 'relu'
-    - layer_norm_per_block: bool
+    - activation: 'geglu', 'relu', or 'silu'
+    - layer_norm_per_block: bool (use LayerNorm)
+    - batch_norm_per_block: bool (use BatchNorm, overrides layer_norm if both set)
     - dropout, embedding_dropout
     - weight_decay
     - mixup: {enabled: bool, alpha: float}
+    - gaussian_noise: {enabled: bool, std: float} for data augmentation
     - label_smoothing: float
     - optimizer: {name, lr, betas, eps}
     - scheduler: {name: 'cosine', warmup_proportion, min_lr}
+    - swa: {enabled: bool, final_epochs: int} for Stochastic Weight Averaging
     - training: {batch_size, epochs, early_stopping: {enabled, monitor, patience}, auto_device}
     """
 
@@ -80,13 +83,16 @@ class MLPClassifier:
         hidden_dims: list = [128, 64, 32],
         activation: str = 'relu',
         layer_norm_per_block: bool = False,
+        batch_norm_per_block: bool = False,
         dropout: float = 0.2,
         embedding_dropout: float = 0.0,
         weight_decay: float = 0.0,
         mixup: Optional[Dict[str, Any]] = None,
+        gaussian_noise: Optional[Dict[str, Any]] = None,
         label_smoothing: float = 0.0,
         optimizer: Optional[Dict[str, Any]] = None,
         scheduler: Optional[Dict[str, Any]] = None,
+        swa: Optional[Dict[str, Any]] = None,
         training: Optional[Dict[str, Any]] = None,
         random_seed: Optional[int] = None,
         device: Optional[str] = None,
@@ -97,22 +103,35 @@ class MLPClassifier:
         
         Args:
             hidden_dims: List of hidden layer dimensions
+            activation: Activation function ('relu', 'silu', 'geglu')
+            layer_norm_per_block: Use LayerNorm after each layer
+            batch_norm_per_block: Use BatchNorm after each layer (overrides layer_norm)
             dropout: Dropout rate
-            learning_rate: Learning rate for optimizer
-            batch_size: Batch size for training
-            epochs: Number of training epochs
+            embedding_dropout: Dropout on input features
+            weight_decay: L2 regularization
+            mixup: MixUp augmentation config
+            gaussian_noise: Gaussian noise augmentation config
+            label_smoothing: Label smoothing factor
+            optimizer: Optimizer configuration
+            scheduler: Learning rate scheduler configuration
+            swa: Stochastic Weight Averaging configuration
+            training: Training configuration
+            random_seed: Random seed for reproducibility
             device: Device to use ('cpu' or 'cuda')
         """
         self.hidden_dims = hidden_dims
         self.activation = activation.lower() if activation else 'relu'
         self.layer_norm_per_block = bool(layer_norm_per_block)
+        self.batch_norm_per_block = bool(batch_norm_per_block)
         self.dropout = float(dropout)
         self.embedding_dropout = float(embedding_dropout)
         self.weight_decay = float(weight_decay)
         self.mixup = mixup or {'enabled': False}
+        self.gaussian_noise = gaussian_noise or {'enabled': False}
         self.label_smoothing = float(label_smoothing or 0.0)
         self.optimizer_cfg = optimizer or {'name': 'Adam', 'lr': 0.001}
         self.scheduler_cfg = scheduler or {'name': None}
+        self.swa_cfg = swa or {'enabled': False}
         training = training or {}
         self.batch_size = int(training.get('batch_size', 32))
         self.epochs = int(training.get('epochs', 100))
@@ -130,6 +149,7 @@ class MLPClassifier:
         self.model_name = "MLP"
         self.input_dim = None
         self.output_dim = None
+        self.swa_model = None
 
     def _to_numpy(self, X):
         """Convert input X to a numpy array.
@@ -175,14 +195,25 @@ class MLPClassifier:
             # If using GEGLU we need to double the linear width for gated proj
             if self.activation == 'geglu':
                 layers.append(nn.Linear(prev, h * 2))
-                if self.layer_norm_per_block:
+                # BatchNorm takes precedence over LayerNorm if both are set
+                if self.batch_norm_per_block:
+                    layers.append(nn.BatchNorm1d(h * 2))
+                elif self.layer_norm_per_block:
                     layers.append(nn.LayerNorm(h * 2))
                 layers.append(GEGLU())
             else:
                 layers.append(nn.Linear(prev, h))
-                if self.layer_norm_per_block:
+                # BatchNorm takes precedence over LayerNorm if both are set
+                if self.batch_norm_per_block:
+                    layers.append(nn.BatchNorm1d(h))
+                elif self.layer_norm_per_block:
                     layers.append(nn.LayerNorm(h))
-                layers.append(nn.ReLU())
+                
+                # Activation function selection
+                if self.activation == 'silu':
+                    layers.append(nn.SiLU())
+                else:  # default to relu
+                    layers.append(nn.ReLU())
 
             layers.append(nn.Dropout(self.dropout))
             prev = h
@@ -231,13 +262,36 @@ class MLPClassifier:
 
             scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-        # Training loop with MixUp and optional manual label smoothing fallback
+        # SWA setup if enabled
+        swa_model = None
+        swa_start_epoch = None
+        if self.swa_cfg and self.swa_cfg.get('enabled', False):
+            try:
+                from torch.optim.swa_utils import AveragedModel, SWALR
+                swa_final_epochs = int(self.swa_cfg.get('final_epochs', 30))
+                swa_start_epoch = max(0, self.epochs - swa_final_epochs)
+                swa_model = AveragedModel(self.model)
+                # Use SWALR scheduler if we have a base scheduler, otherwise None
+                swa_scheduler = SWALR(optimizer, swa_lr=lr * 0.1) if scheduler is None else None
+                print(f"SWA enabled: will average weights from epoch {swa_start_epoch + 1} to {self.epochs}")
+            except ImportError:
+                print("Warning: torch.optim.swa_utils not available, SWA disabled")
+                swa_model = None
+                swa_start_epoch = None
+
+        # Training loop with MixUp, Gaussian noise, and SWA support
         self.model.train()
         for epoch in range(self.epochs):
             total_loss = 0.0
             for batch_X, batch_y in dataloader:
                 batch_X = batch_X.to(self.device)
                 batch_y = batch_y.to(self.device)
+
+                # Gaussian noise augmentation (applied during training only)
+                if self.gaussian_noise and self.gaussian_noise.get('enabled', False):
+                    noise_std = float(self.gaussian_noise.get('std', 0.01))
+                    noise = torch.randn_like(batch_X) * noise_std
+                    batch_X = batch_X + noise
 
                 # MixUp augmentation
                 if self.mixup and self.mixup.get('enabled', False):
@@ -262,9 +316,29 @@ class MLPClassifier:
 
                 total_loss += loss.item()
 
+            # Update SWA model if we're in the averaging phase
+            if swa_model is not None and epoch >= swa_start_epoch:
+                swa_model.update_parameters(self.model)
+                if swa_scheduler is not None:
+                    swa_scheduler.step()
+
             if (epoch + 1) % 10 == 0 or epoch == 0:
                 avg_loss = total_loss / len(dataloader)
-                print(f"Epoch [{epoch+1}/{self.epochs}], Loss: {avg_loss:.6f}")
+                swa_status = f" [SWA averaging]" if swa_model is not None and epoch >= swa_start_epoch else ""
+                print(f"Epoch [{epoch+1}/{self.epochs}], Loss: {avg_loss:.6f}{swa_status}")
+
+        # Finalize SWA if used
+        if swa_model is not None:
+            print("Finalizing SWA model...")
+            try:
+                import torch.optim.swa_utils as swa_utils
+                # Update batch norm statistics for the SWA model
+                swa_utils.update_bn(dataloader, swa_model, device=self.device)
+                self.model = swa_model.module  # Replace model with SWA averaged version
+                self.swa_model = swa_model
+                print("SWA model finalized and set as primary model")
+            except Exception as e:
+                print(f"Warning: SWA finalization failed: {e}, using non-SWA model")
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Make predictions."""
@@ -326,9 +400,11 @@ class TransformerClassifier:
     - d_model, nhead, num_layers, dim_feedforward, dropout
     - weight_decay
     - mixup: {enabled: bool, alpha: float}
+    - gaussian_noise: {enabled: bool, std: float} for data augmentation
     - label_smoothing: float
     - optimizer: {name, lr, betas, eps}
     - scheduler: {name: 'cosine', warmup_proportion, min_lr}
+    - swa: {enabled: bool, final_epochs: int} for Stochastic Weight Averaging
     - training: {batch_size, epochs, auto_device}
     """
     
@@ -341,9 +417,11 @@ class TransformerClassifier:
         dropout: float = 0.1,
         weight_decay: float = 0.0,
         mixup: Optional[Dict[str, Any]] = None,
+        gaussian_noise: Optional[Dict[str, Any]] = None,
         label_smoothing: float = 0.0,
         optimizer: Optional[Dict[str, Any]] = None,
         scheduler: Optional[Dict[str, Any]] = None,
+        swa: Optional[Dict[str, Any]] = None,
         training: Optional[Dict[str, Any]] = None,
         random_seed: Optional[int] = None,
         device: Optional[str] = None,
@@ -364,9 +442,11 @@ class TransformerClassifier:
             dropout: Dropout rate
             weight_decay: Weight decay for optimizer
             mixup: MixUp augmentation config
+            gaussian_noise: Gaussian noise augmentation config
             label_smoothing: Label smoothing factor
             optimizer: Optimizer configuration
             scheduler: Learning rate scheduler configuration
+            swa: Stochastic Weight Averaging configuration
             training: Training configuration
             random_seed: Random seed for reproducibility
             device: Device to use ('cpu' or 'cuda')
@@ -378,9 +458,11 @@ class TransformerClassifier:
         self.dropout = float(dropout)
         self.weight_decay = float(weight_decay)
         self.mixup = mixup or {'enabled': False}
+        self.gaussian_noise = gaussian_noise or {'enabled': False}
         self.label_smoothing = float(label_smoothing or 0.0)
         self.optimizer_cfg = optimizer or {'name': 'Adam', 'lr': learning_rate}
         self.scheduler_cfg = scheduler or {'name': None}
+        self.swa_cfg = swa or {'enabled': False}
         training = training or {}
         self.batch_size = int(training.get('batch_size', batch_size))
         self.epochs = int(training.get('epochs', epochs))
@@ -397,6 +479,7 @@ class TransformerClassifier:
         self.model_name = "Transformer"
         self.input_dim = None
         self.output_dim = None
+        self.swa_model = None
     
     def _build_model(self):
         """Build the transformer model."""
@@ -507,7 +590,24 @@ class TransformerClassifier:
             
             scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
         
-        # Training loop with MixUp support
+        # SWA setup if enabled
+        swa_model = None
+        swa_start_epoch = None
+        if self.swa_cfg and self.swa_cfg.get('enabled', False):
+            try:
+                from torch.optim.swa_utils import AveragedModel, SWALR
+                swa_final_epochs = int(self.swa_cfg.get('final_epochs', 30))
+                swa_start_epoch = max(0, self.epochs - swa_final_epochs)
+                swa_model = AveragedModel(self.model)
+                # Use SWALR scheduler if we have a base scheduler, otherwise None
+                swa_scheduler = SWALR(optimizer, swa_lr=lr * 0.1) if scheduler is None else None
+                print(f"SWA enabled: will average weights from epoch {swa_start_epoch + 1} to {self.epochs}")
+            except ImportError:
+                print("Warning: torch.optim.swa_utils not available, SWA disabled")
+                swa_model = None
+                swa_start_epoch = None
+
+        # Training loop with MixUp, Gaussian noise, and SWA support
         self.model.train()
         for epoch in range(self.epochs):
             total_loss = 0.0
@@ -515,6 +615,12 @@ class TransformerClassifier:
                 batch_X = batch_X.to(self.device)
                 batch_y = batch_y.to(self.device)
                 
+                # Gaussian noise augmentation (applied during training only)
+                if self.gaussian_noise and self.gaussian_noise.get('enabled', False):
+                    noise_std = float(self.gaussian_noise.get('std', 0.01))
+                    noise = torch.randn_like(batch_X) * noise_std
+                    batch_X = batch_X + noise
+
                 # MixUp augmentation
                 if self.mixup and self.mixup.get('enabled', False):
                     alpha = float(self.mixup.get('alpha', 0.2))
@@ -537,10 +643,30 @@ class TransformerClassifier:
                     scheduler.step()
                 
                 total_loss += loss.item()
+
+            # Update SWA model if we're in the averaging phase
+            if swa_model is not None and epoch >= swa_start_epoch:
+                swa_model.update_parameters(self.model)
+                if swa_scheduler is not None:
+                    swa_scheduler.step()
             
             if (epoch + 1) % 10 == 0 or epoch == 0:
                 avg_loss = total_loss / len(dataloader)
-                print(f"Epoch [{epoch+1}/{self.epochs}], Loss: {avg_loss:.6f}")
+                swa_status = f" [SWA averaging]" if swa_model is not None and epoch >= swa_start_epoch else ""
+                print(f"Epoch [{epoch+1}/{self.epochs}], Loss: {avg_loss:.6f}{swa_status}")
+
+        # Finalize SWA if used
+        if swa_model is not None:
+            print("Finalizing SWA model...")
+            try:
+                import torch.optim.swa_utils as swa_utils
+                # Update batch norm statistics for the SWA model
+                swa_utils.update_bn(dataloader, swa_model, device=self.device)
+                self.model = swa_model.module  # Replace model with SWA averaged version
+                self.swa_model = swa_model
+                print("SWA model finalized and set as primary model")
+            except Exception as e:
+                print(f"Warning: SWA finalization failed: {e}, using non-SWA model")
 
     def _to_numpy(self, X):
         """Convert input X to a numpy array.
