@@ -219,6 +219,53 @@ class SHAPExplainer:
 
         return feature_importance
     
+    def plot_dependence(
+        self, 
+        feature: str, 
+        X_test: pd.DataFrame, 
+        interaction_index: str = 'auto',
+        save_path: Optional[str] = None
+    ):
+        """
+        Create SHAP dependence plot showing the effect of a single feature.
+        
+        Dependence plots show how a single feature affects the model's predictions,
+        with the feature value on the x-axis and the SHAP value on the y-axis.
+        
+        Args:
+            feature: Name of the feature to plot
+            X_test: Test data
+            interaction_index: Feature to use for coloring (default 'auto' finds best interaction)
+            save_path: Path to save plot
+        """
+        if self.shap_values is None:
+            self.explain(X_test)
+        
+        # Validate feature exists
+        if feature not in X_test.columns:
+            raise ValueError(f"Feature '{feature}' not found in X_test columns")
+        
+        plt.figure(figsize=(10, 6))
+        
+        # Handle multiclass case - use first class
+        if isinstance(self.shap_values, list):
+            shap_vals = self.shap_values[0]
+        else:
+            shap_vals = self.shap_values
+        
+        # Create dependence plot
+        shap.dependence_plot(
+            feature,
+            shap_vals,
+            X_test,
+            interaction_index=interaction_index,
+            show=False
+        )
+        
+        if save_path:
+            plt.savefig(save_path, bbox_inches='tight', dpi=300)
+        plt.close()
+    
     def explain_instance(self, instance: pd.Series, class_idx: int = 0) -> Dict[str, float]:
         """
         Explain a single instance.

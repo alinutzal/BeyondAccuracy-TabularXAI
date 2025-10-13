@@ -135,6 +135,21 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
         except Exception as plot_err:
             print(f"Warning: SHAP importance plot failed: {plot_err}")
         
+        # Save SHAP dependence plots for top features
+        try:
+            # Get top 3 most important features
+            top_features = shap_importance.head(3)['feature'].tolist()
+            for feature in top_features:
+                safe_feature_name = feature.replace(' ', '_').replace('/', '_')
+                shap_explainer.plot_dependence(
+                    feature,
+                    X_test.head(100),
+                    save_path=os.path.join(experiment_dir, f'shap_dependence_{safe_feature_name}.png')
+                )
+            print(f"Generated SHAP dependence plots for top {len(top_features)} features")
+        except Exception as plot_err:
+            print(f"Warning: SHAP dependence plot failed: {plot_err}")
+        
         # Get SHAP explanations for metrics
         shap_explanations = []
         for i in range(min(50, len(X_test))):

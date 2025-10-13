@@ -80,6 +80,7 @@ After running an experiment, you'll find in `results/{dataset}_{model}/`:
 - `results.json` - Complete metrics and metadata
 - `shap_summary.png` - SHAP summary visualization
 - `shap_importance.png` - SHAP feature importance plot
+- `shap_dependence_*.png` - SHAP dependence plots showing feature effects
 - `lime_importance.png` - LIME feature importance plot (if available)
 - `shap_feature_importance.csv` - SHAP feature scores
 - `lime_feature_importance.csv` - LIME feature scores (if available)

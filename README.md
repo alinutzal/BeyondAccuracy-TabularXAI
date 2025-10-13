@@ -151,6 +151,7 @@ results/
 │   ├── results.json                  # Metrics and metadata
 │   ├── shap_summary.png              # SHAP summary plot
 │   ├── shap_importance.png           # SHAP feature importance
+│   ├── shap_dependence_*.png         # SHAP dependence plots for top features
 │   ├── lime_importance.png           # LIME feature importance
 │   ├── shap_feature_importance.csv   # SHAP importance scores
 │   └── lime_feature_importance.csv   # LIME importance scores
