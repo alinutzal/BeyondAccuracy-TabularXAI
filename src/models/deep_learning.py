@@ -82,12 +82,24 @@ class MLPClassifier:
         self.model_name = "MLP"
         self.input_dim = None
         self.output_dim = None
+
+    def _to_numpy(self, X):
+        """Convert input X to a numpy array.
+
+        Supports pandas DataFrame/Series, torch.Tensor, numpy arrays, and lists.
+        """
+        if isinstance(X, (pd.DataFrame, pd.Series)):
+            return X.values
+        if isinstance(X, torch.Tensor):
+            return X.cpu().numpy()
+        return np.asarray(X)
     
     def train(self, X_train: pd.DataFrame, y_train: pd.Series) -> None:
         """Train the model."""
         # Convert to tensors
-        X_tensor = torch.FloatTensor(X_train.values)
-        y_tensor = torch.LongTensor(y_train.values)
+        X_np = self._to_numpy(X_train)
+        X_tensor = torch.FloatTensor(X_np)
+        y_tensor = torch.LongTensor(self._to_numpy(y_train).ravel())
         
         # Create dataset and dataloader
         dataset = TensorDataset(X_tensor, y_tensor)
@@ -129,7 +141,7 @@ class MLPClassifier:
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Make predictions."""
         self.model.eval()
-        X_tensor = torch.FloatTensor(X.values).to(self.device)
+        X_tensor = torch.FloatTensor(self._to_numpy(X)).to(self.device)
         
         with torch.no_grad():
             outputs = self.model(X_tensor)
@@ -140,7 +152,7 @@ class MLPClassifier:
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """Get prediction probabilities."""
         self.model.eval()
-        X_tensor = torch.FloatTensor(X.values).to(self.device)
+        X_tensor = torch.FloatTensor(self._to_numpy(X)).to(self.device)
         
         with torch.no_grad():
             outputs = self.model(X_tensor)
@@ -275,8 +287,9 @@ class TransformerClassifier:
     def train(self, X_train: pd.DataFrame, y_train: pd.Series) -> None:
         """Train the model."""
         # Convert to tensors
-        X_tensor = torch.FloatTensor(X_train.values)
-        y_tensor = torch.LongTensor(y_train.values)
+        X_np = self._to_numpy(X_train)
+        X_tensor = torch.FloatTensor(X_np)
+        y_tensor = torch.LongTensor(self._to_numpy(y_train).ravel())
         
         # Create dataset and dataloader
         dataset = TensorDataset(X_tensor, y_tensor)
@@ -309,11 +322,22 @@ class TransformerClassifier:
             if (epoch + 1) % 10 == 0:
                 avg_loss = total_loss / len(dataloader)
                 print(f"Epoch [{epoch+1}/{self.epochs}], Loss: {avg_loss:.4f}")
+
+    def _to_numpy(self, X):
+        """Convert input X to a numpy array.
+
+        Supports pandas DataFrame/Series, torch.Tensor, numpy arrays, and lists.
+        """
+        if isinstance(X, (pd.DataFrame, pd.Series)):
+            return X.values
+        if isinstance(X, torch.Tensor):
+            return X.cpu().numpy()
+        return np.asarray(X)
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Make predictions."""
         self.model.eval()
-        X_tensor = torch.FloatTensor(X.values).to(self.device)
+        X_tensor = torch.FloatTensor(self._to_numpy(X)).to(self.device)
         
         with torch.no_grad():
             outputs = self.model(X_tensor)
@@ -324,7 +348,7 @@ class TransformerClassifier:
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """Get prediction probabilities."""
         self.model.eval()
-        X_tensor = torch.FloatTensor(X.values).to(self.device)
+        X_tensor = torch.FloatTensor(self._to_numpy(X)).to(self.device)
         
         with torch.no_grad():
             outputs = self.model(X_tensor)

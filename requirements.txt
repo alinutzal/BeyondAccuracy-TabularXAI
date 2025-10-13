@@ -25,8 +25,6 @@ seaborn>=0.12.0
 plotly>=5.14.0
 
 # Jupyter
-jupyter>=1.0.0
-notebook>=6.5.0
 ipykernel>=6.23.0
 
 # Additional utilities
