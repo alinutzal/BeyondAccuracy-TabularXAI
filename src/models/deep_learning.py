@@ -371,7 +371,6 @@ class TransformerClassifier:
         learning_rate: float = 0.001,
         batch_size: int = 32,
         epochs: int = 100,
-        device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
         gaussian_noise_sigma: float = 0.0,
         **kwargs
     ):
