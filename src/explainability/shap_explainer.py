@@ -266,6 +266,73 @@ class SHAPExplainer:
             plt.savefig(save_path, bbox_inches='tight', dpi=300)
         plt.close()
     
+    def plot_waterfall(
+        self,
+        instance: pd.Series,
+        class_idx: int = 0,
+        max_display: int = 10,
+        save_path: Optional[str] = None
+    ):
+        """
+        Create SHAP waterfall plot showing how features push prediction from base value.
+        
+        The waterfall plot visualizes the "Shapley flow" - showing how each feature's
+        contribution moves the prediction from the expected value (base value) to the
+        final model prediction. This is particularly useful for explaining individual
+        predictions to stakeholders.
+        
+        Args:
+            instance: Single instance to explain (as a Series)
+            class_idx: Class index for multiclass classification (default 0)
+            max_display: Maximum number of features to display (default 10)
+            save_path: Path to save plot
+        """
+        # Ensure we have SHAP values computed
+        if self.shap_values is None:
+            self.explain(instance.to_frame().T)
+        
+        # Get the explainer's expected value (base value)
+        if hasattr(self.explainer, 'expected_value'):
+            expected_value = self.explainer.expected_value
+            # Handle multiclass case
+            if isinstance(expected_value, (list, np.ndarray)):
+                expected_value = expected_value[class_idx]
+        else:
+            # Fallback: use mean prediction on training data
+            expected_value = 0.0
+        
+        # Extract SHAP values for this instance
+        if isinstance(self.shap_values, list):
+            shap_vals = self.shap_values[class_idx]
+            if isinstance(shap_vals, np.ndarray) and shap_vals.ndim == 2:
+                shap_vals = shap_vals[0]
+        else:
+            shap_vals = self.shap_values
+            if isinstance(shap_vals, np.ndarray) and shap_vals.ndim == 2:
+                shap_vals = shap_vals[0]
+        
+        # Create SHAP Explanation object for waterfall plot
+        # This requires the newer SHAP API
+        try:
+            import shap
+            explanation = shap.Explanation(
+                values=shap_vals,
+                base_values=expected_value,
+                data=instance.values,
+                feature_names=instance.index.tolist()
+            )
+            
+            plt.figure(figsize=(10, 6))
+            shap.plots.waterfall(explanation, max_display=max_display, show=False)
+            
+            if save_path:
+                plt.savefig(save_path, bbox_inches='tight', dpi=300)
+            plt.close()
+            
+        except Exception as e:
+            print(f"Warning: Could not create waterfall plot: {e}")
+            print("Note: Waterfall plots require shap>=0.40.0")
+    
     def explain_instance(self, instance: pd.Series, class_idx: int = 0) -> Dict[str, float]:
         """
         Explain a single instance.
