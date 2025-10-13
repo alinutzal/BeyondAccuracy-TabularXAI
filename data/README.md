@@ -32,9 +32,16 @@ This directory contains the datasets used in the experiments. Datasets are autom
 
 All datasets undergo the following preprocessing:
 1. Missing value handling (if any)
-2. Categorical feature encoding (Label Encoding)
-3. Feature scaling (StandardScaler for numerical features)
+2. Categorical feature encoding (Label Encoding with rare-category bucketing for adult_income)
+3. Feature scaling:
+   - **Adult Income**: QuantileTransformer with normal distribution
+   - **Other datasets**: StandardScaler
 4. Train-test split (80-20) with stratification
+
+### Adult Income Special Preprocessing
+The adult_income dataset uses enhanced preprocessing:
+- **Categorical features**: Rare categories (< 1% of data) are bucketed into an 'other' category before encoding
+- **Numerical features**: QuantileTransformer with normal distribution (instead of StandardScaler) to handle skewed distributions
 
 ## Data Loading
 
