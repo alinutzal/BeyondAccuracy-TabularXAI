@@ -73,7 +73,8 @@ class MLPClassifier:
     - optimizer: {name, lr, betas, eps}
     - scheduler: {name: 'cosine', warmup_proportion, min_lr}
     - training: {batch_size, epochs, early_stopping: {enabled, monitor, patience}, auto_device}
-    - distillation: {enabled: bool, teacher_probs: array, lambda: float, temperature: float}
+    - distillation: {enabled: bool, teacher_probs: array, lambda: float, temperature: float, 
+                     consistency_penalty: {enabled: bool, top_k_features: list, weight: float}}
     """
 
     def __init__(
@@ -265,6 +266,12 @@ class MLPClassifier:
         distill_lambda = float(self.distillation.get('lambda', 0.7)) if distill_enabled else 0.0
         distill_temperature = float(self.distillation.get('temperature', 2.0)) if distill_enabled else 1.0
         
+        # Get consistency penalty parameters
+        consistency_penalty_cfg = self.distillation.get('consistency_penalty', {}) if distill_enabled else {}
+        use_consistency_penalty = consistency_penalty_cfg.get('enabled', False)
+        top_k_features = consistency_penalty_cfg.get('top_k_features', None)
+        consistency_weight = float(consistency_penalty_cfg.get('weight', 0.01))
+        
         # Training loop with MixUp and optional manual label smoothing fallback
         self.model.train()
         for epoch in range(self.epochs):
@@ -297,6 +304,11 @@ class MLPClassifier:
                     loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(outputs, targets_b)
                 else:
                     optimizer.zero_grad()
+                    
+                    # For consistency penalty, we need gradients w.r.t. inputs
+                    if use_consistency_penalty and top_k_features is not None and len(top_k_features) > 0:
+                        batch_X.requires_grad_(True)
+                    
                     outputs = self.model(batch_X)
                     
                     if distill_enabled:
@@ -317,6 +329,31 @@ class MLPClassifier:
                         
                         # Combined loss
                         loss = distill_lambda * kl_loss + (1.0 - distill_lambda) * ce_loss
+                        
+                        # Optional: Add consistency penalty on SHAP top-k features
+                        # This increases sensitivity to important features via Jacobian norm
+                        if use_consistency_penalty and top_k_features is not None and len(top_k_features) > 0:
+                            jacobian_penalty = 0.0
+                            for class_idx in range(self.output_dim):
+                                # Get gradients of output w.r.t. input for specific class
+                                grad_outputs = torch.zeros_like(outputs)
+                                grad_outputs[:, class_idx] = 1.0
+                                grads = torch.autograd.grad(
+                                    outputs=outputs,
+                                    inputs=batch_X,
+                                    grad_outputs=grad_outputs,
+                                    create_graph=True,
+                                    retain_graph=True,
+                                    only_inputs=True
+                                )[0]
+                                
+                                # Compute norm only for top-k features (indices)
+                                top_k_indices = torch.tensor(top_k_features, device=self.device, dtype=torch.long)
+                                top_k_grads = grads[:, top_k_indices]
+                                jacobian_penalty += torch.mean(top_k_grads ** 2)
+                            
+                            # Add penalty to loss (negative to encourage larger gradients = more sensitivity)
+                            loss = loss - consistency_weight * jacobian_penalty
                     else:
                         loss = criterion(outputs, batch_y)
 
@@ -407,7 +444,8 @@ class TransformerClassifier:
     - optimizer: {name, lr, betas, eps}
     - scheduler: {name: 'cosine', warmup_proportion, min_lr}
     - training: {batch_size, epochs, auto_device}
-    - distillation: {enabled: bool, teacher_probs: array, lambda: float, temperature: float}
+    - distillation: {enabled: bool, teacher_probs: array, lambda: float, temperature: float,
+                     consistency_penalty: {enabled: bool, top_k_features: list, weight: float}}
     """
     
     def __init__(
@@ -618,6 +656,12 @@ class TransformerClassifier:
         distill_lambda = float(self.distillation.get('lambda', 0.7)) if distill_enabled else 0.0
         distill_temperature = float(self.distillation.get('temperature', 2.0)) if distill_enabled else 1.0
         
+        # Get consistency penalty parameters
+        consistency_penalty_cfg = self.distillation.get('consistency_penalty', {}) if distill_enabled else {}
+        use_consistency_penalty = consistency_penalty_cfg.get('enabled', False)
+        top_k_features = consistency_penalty_cfg.get('top_k_features', None)
+        consistency_weight = float(consistency_penalty_cfg.get('weight', 0.01))
+        
         # Training loop with MixUp support
         self.model.train()
         for epoch in range(self.epochs):
@@ -650,6 +694,11 @@ class TransformerClassifier:
                     loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(outputs, targets_b)
                 else:
                     optimizer.zero_grad()
+                    
+                    # For consistency penalty, we need gradients w.r.t. inputs
+                    if use_consistency_penalty and top_k_features is not None and len(top_k_features) > 0:
+                        batch_X.requires_grad_(True)
+                    
                     outputs = self.model(batch_X)
                     
                     if distill_enabled:
@@ -670,6 +719,31 @@ class TransformerClassifier:
                         
                         # Combined loss
                         loss = distill_lambda * kl_loss + (1.0 - distill_lambda) * ce_loss
+                        
+                        # Optional: Add consistency penalty on SHAP top-k features
+                        # This increases sensitivity to important features via Jacobian norm
+                        if use_consistency_penalty and top_k_features is not None and len(top_k_features) > 0:
+                            jacobian_penalty = 0.0
+                            for class_idx in range(self.output_dim):
+                                # Get gradients of output w.r.t. input for specific class
+                                grad_outputs = torch.zeros_like(outputs)
+                                grad_outputs[:, class_idx] = 1.0
+                                grads = torch.autograd.grad(
+                                    outputs=outputs,
+                                    inputs=batch_X,
+                                    grad_outputs=grad_outputs,
+                                    create_graph=True,
+                                    retain_graph=True,
+                                    only_inputs=True
+                                )[0]
+                                
+                                # Compute norm only for top-k features (indices)
+                                top_k_indices = torch.tensor(top_k_features, device=self.device, dtype=torch.long)
+                                top_k_grads = grads[:, top_k_indices]
+                                jacobian_penalty += torch.mean(top_k_grads ** 2)
+                            
+                            # Add penalty to loss (negative to encourage larger gradients = more sensitivity)
+                            loss = loss - consistency_weight * jacobian_penalty
                     else:
                         loss = criterion(outputs, batch_y)
                 
