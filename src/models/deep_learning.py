@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from typing import Dict, Any, Optional
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, average_precision_score, brier_score_loss
 
 
 class TabularMLP(nn.Module):
@@ -96,6 +96,7 @@ class MLPClassifier:
         training: Optional[Dict[str, Any]] = None,
         random_seed: Optional[int] = None,
         device: Optional[str] = None,
+        gaussian_noise_sigma: float = 0.0,
         **kwargs
     ):
         """
@@ -138,6 +139,8 @@ class MLPClassifier:
         self.early_stopping = training.get('early_stopping', {'enabled': False})
         self.auto_device = bool(training.get('auto_device', True))
         self.random_seed = random_seed
+        # training-only Gaussian noise standard deviation. Applied per-batch during training.
+        self.gaussian_noise_sigma = float(gaussian_noise_sigma or 0.0)
 
         # device selection
         if device:
@@ -287,10 +290,9 @@ class MLPClassifier:
                 batch_X = batch_X.to(self.device)
                 batch_y = batch_y.to(self.device)
 
-                # Gaussian noise augmentation (applied during training only)
-                if self.gaussian_noise and self.gaussian_noise.get('enabled', False):
-                    noise_std = float(self.gaussian_noise.get('std', 0.01))
-                    noise = torch.randn_like(batch_X) * noise_std
+                # Training-only Gaussian noise augmentation (applied to inputs only)
+                if self.gaussian_noise_sigma and self.gaussian_noise_sigma > 0 and self.model.training:
+                    noise = torch.randn_like(batch_X) * float(self.gaussian_noise_sigma)
                     batch_X = batch_X + noise
 
                 # MixUp augmentation
@@ -381,7 +383,19 @@ class MLPClassifier:
         
         # Add AUC-ROC for binary classification
         if len(np.unique(y_test)) == 2:
-            metrics['roc_auc'] = roc_auc_score(y_test, y_proba[:, 1])
+            try:
+                probs = y_proba[:, 1] if (hasattr(y_proba, 'ndim') and y_proba.ndim == 2 and y_proba.shape[1] > 1) else y_proba
+                metrics['roc_auc'] = roc_auc_score(y_test, probs)
+            except Exception:
+                metrics['roc_auc'] = None
+            try:
+                metrics['pr_auc'] = average_precision_score(y_test, probs)
+            except Exception:
+                metrics['pr_auc'] = None
+            try:
+                metrics['brier_score'] = brier_score_loss(y_test, probs)
+            except Exception:
+                metrics['brier_score'] = None
         else:
             try:
                 metrics['roc_auc'] = roc_auc_score(y_test, y_proba, multi_class='ovr', average='weighted')
@@ -429,6 +443,8 @@ class TransformerClassifier:
         learning_rate: float = 0.001,
         batch_size: int = 32,
         epochs: int = 100,
+        device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
+        gaussian_noise_sigma: float = 0.0,
         **kwargs
     ):
         """
@@ -480,6 +496,8 @@ class TransformerClassifier:
         self.input_dim = None
         self.output_dim = None
         self.swa_model = None
+        # training-only Gaussian noise standard deviation. Applied per-batch during training.
+        self.gaussian_noise_sigma = float(gaussian_noise_sigma or 0.0)
     
     def _build_model(self):
         """Build the transformer model."""
@@ -632,6 +650,11 @@ class TransformerClassifier:
                     outputs = self.model(mixed_X)
                     # Compute mixup loss: lam * loss(pred, a) + (1-lam) * loss(pred, b)
                     loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(outputs, targets_b)
+
+                # Training-only Gaussian noise augmentation
+                if self.gaussian_noise_sigma and self.gaussian_noise_sigma > 0 and self.model.training:
+                    noise = torch.randn_like(batch_X) * float(self.gaussian_noise_sigma)
+                    batch_X = batch_X + noise
                 else:
                     optimizer.zero_grad()
                     outputs = self.model(batch_X)
@@ -720,7 +743,19 @@ class TransformerClassifier:
         
         # Add AUC-ROC for binary classification
         if len(np.unique(y_test)) == 2:
-            metrics['roc_auc'] = roc_auc_score(y_test, y_proba[:, 1])
+            try:
+                probs = y_proba[:, 1] if (hasattr(y_proba, 'ndim') and y_proba.ndim == 2 and y_proba.shape[1] > 1) else y_proba
+                metrics['roc_auc'] = roc_auc_score(y_test, probs)
+            except Exception:
+                metrics['roc_auc'] = None
+            try:
+                metrics['pr_auc'] = average_precision_score(y_test, probs)
+            except Exception:
+                metrics['pr_auc'] = None
+            try:
+                metrics['brier_score'] = brier_score_loss(y_test, probs)
+            except Exception:
+                metrics['brier_score'] = None
         else:
             try:
                 metrics['roc_auc'] = roc_auc_score(y_test, y_proba, multi_class='ovr', average='weighted')

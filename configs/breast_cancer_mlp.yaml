@@ -39,6 +39,7 @@ training:
     patience: 50
   auto_device: true
 
+gaussian_noise_sigma: 0.015
 random_seed: 42
 
 notes: |

@@ -240,18 +240,45 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
             def model_factory():
                 return make_model_instance()
 
-            cv_res = run_stratified_cv_evaluation(X, y, model_factory, eval_cfg=eval_cfg, n_splits=5)
-            evaluations_results['5fold_stratified_cv'] = cv_res
-
-            # hash-based split on the requested columns
-            # hash split columns and threshold can be configured in configs/adult_income.yaml
-            hs = dataset_cfg.get('hash_split', {}) if dataset_cfg else {}
-            split_cols = hs.get('columns', ['education-num', 'age', 'workclass'])
-            threshold = float(hs.get('threshold', 0.5))
-            hash_res = run_hash_timeish_split(X, y, model_factory, split_cols, threshold=threshold, eval_cfg=eval_cfg)
-            evaluations_results['hash_timeish_split'] = hash_res
+            if dataset_cfg.get('cross_validation', {}).get('enabled', False):
+                cv_res = run_stratified_cv_evaluation(X, y, model_factory, eval_cfg=eval_cfg, n_splits=5)
+                evaluations_results['5fold_stratified_cv'] = cv_res
+            else:
+                # hash-based split on the requested columns
+                # hash split columns and threshold can be configured in configs/adult_income.yaml
+                hs = dataset_cfg.get('hash_split', {}) if dataset_cfg else {}
+                split_cols = hs.get('columns', ['education-num', 'age', 'workclass'])
+                threshold = float(hs.get('threshold', 0.5))
+                hash_res = run_hash_timeish_split(X, y, model_factory, split_cols, threshold=threshold, eval_cfg=eval_cfg)
+                evaluations_results['hash_timeish_split'] = hash_res
         except Exception as e:
             print(f"Warning: adult_income special evaluations failed: {e}")
+    elif dataset_name == 'bank_marketing':
+        print('\nRunning special bank_marketing evaluations...')
+        try:
+            from utils.eval import run_stratified_cv_evaluation
+
+            def model_factory():
+                return make_model_instance()
+
+            if dataset_cfg.get('cross_validation', {}).get('enabled', False):
+                cv_res = run_stratified_cv_evaluation(X, y, model_factory, eval_cfg=eval_cfg, n_splits=5)
+                evaluations_results['5fold_stratified_cv'] = cv_res
+        except Exception as e:
+            print(f"Warning: bank_marketing special evaluations failed: {e}")
+    elif dataset_name == 'breast_cancer':
+        print('\nRunning special breast_cancer evaluations...')
+        try:
+            from utils.eval import run_stratified_cv_evaluation
+
+            def model_factory():
+                return make_model_instance()
+
+            if dataset_cfg.get('cross_validation', {}).get('enabled', False):
+                cv_res = run_stratified_cv_evaluation(X, y, model_factory, eval_cfg=eval_cfg, n_splits=5)
+                evaluations_results['5fold_stratified_cv'] = cv_res
+        except Exception as e:
+            print(f"Warning: breast_cancer special evaluations failed: {e}")
 
     # attach evaluations to results
     if len(evaluations_results) > 0:
