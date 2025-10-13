@@ -58,10 +58,10 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
         model = LightGBMClassifier(n_estimators=100, max_depth=6, random_state=42)
         model_type = 'tree'
     elif model_name == 'MLP':
-        model = MLPClassifier(hidden_dims=[128, 64, 32], epochs=50, batch_size=32)
+        model = MLPClassifier(hidden_dims=[128, 64, 32], epochs=100, batch_size=32)
         model_type = 'deep'
     elif model_name == 'Transformer':
-        model = TransformerClassifier(d_model=64, nhead=4, num_layers=2, epochs=50, batch_size=32)
+        model = TransformerClassifier(d_model=64, nhead=4, num_layers=2, epochs=100, batch_size=32)
         model_type = 'deep'
     else:
         raise ValueError(f"Unknown model: {model_name}")
@@ -250,7 +250,7 @@ def run_all_experiments(results_dir: str = '../results'):
         results_dir: Directory to save results
     """
     datasets = ['breast_cancer', 'adult_income', 'bank_marketing']
-    models = ['XGBoost', 'LightGBM', 'Transformer']
+    models = ['XGBoost', 'LightGBM', 'MLP','Transformer']
     
     all_results = []
     

@@ -57,8 +57,8 @@ class MLPClassifier:
         dropout: float = 0.2,
         learning_rate: float = 0.001,
         batch_size: int = 32,
-        epochs: int = 50,
-        device: str = None,
+        epochs: int = 100,
+        device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
         **kwargs
     ):
         """
@@ -204,8 +204,8 @@ class TransformerClassifier:
         dropout: float = 0.1,
         learning_rate: float = 0.001,
         batch_size: int = 32,
-        epochs: int = 50,
-        device: str = None,
+        epochs: int = 100,
+        device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
         **kwargs
     ):
         """
