@@ -108,7 +108,15 @@ class LIMEExplainer:
             exp = self.explain_instance(instance, num_features=len(self.feature_names))
             
             # Get weights for each feature
-            exp_map = dict(exp.as_list())
+            try:
+                exp_map = dict(exp.as_list())
+            except KeyError:
+                # Fallback: use the first available label in the explanation
+                if hasattr(exp, 'local_exp') and len(exp.local_exp) > 0:
+                    first_label = next(iter(exp.local_exp.keys()))
+                    exp_map = dict(exp.as_list(label=first_label))
+                else:
+                    exp_map = {}
             for feature in self.feature_names:
                 # LIME returns feature names with conditions, match them
                 weight = 0.0

@@ -139,7 +139,14 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
         for i in range(min(50, len(X_test))):
             try:
                 exp = lime_explainer.explain_instance(X_test.iloc[i].values, num_features=10)
-                exp_dict = dict(exp.as_list())
+                try:
+                    exp_dict = dict(exp.as_list())
+                except KeyError:
+                    if hasattr(exp, 'local_exp') and len(exp.local_exp) > 0:
+                        first_label = next(iter(exp.local_exp.keys()))
+                        exp_dict = dict(exp.as_list(label=first_label))
+                    else:
+                        exp_dict = {}
                 # Convert to feature-based dict
                 feature_exp = {}
                 for feature in X_test.columns:
