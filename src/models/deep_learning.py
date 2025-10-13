@@ -319,8 +319,17 @@ class MLPClassifier:
 
 class TransformerClassifier:
     """
-    Simplified transformer-based classifier for tabular data.
+    Transformer-based classifier for tabular data.
     Uses attention mechanism to learn feature relationships.
+    
+    Supports configuration keys from YAML such as:
+    - d_model, nhead, num_layers, dim_feedforward, dropout
+    - weight_decay
+    - mixup: {enabled: bool, alpha: float}
+    - label_smoothing: float
+    - optimizer: {name, lr, betas, eps}
+    - scheduler: {name: 'cosine', warmup_proportion, min_lr}
+    - training: {batch_size, epochs, auto_device}
     """
     
     def __init__(
@@ -330,10 +339,18 @@ class TransformerClassifier:
         num_layers: int = 2,
         dim_feedforward: int = 256,
         dropout: float = 0.1,
+        weight_decay: float = 0.0,
+        mixup: Optional[Dict[str, Any]] = None,
+        label_smoothing: float = 0.0,
+        optimizer: Optional[Dict[str, Any]] = None,
+        scheduler: Optional[Dict[str, Any]] = None,
+        training: Optional[Dict[str, Any]] = None,
+        random_seed: Optional[int] = None,
+        device: Optional[str] = None,
+        # Legacy parameters for backward compatibility
         learning_rate: float = 0.001,
         batch_size: int = 32,
         epochs: int = 100,
-        device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
         **kwargs
     ):
         """
@@ -345,20 +362,37 @@ class TransformerClassifier:
             num_layers: Number of transformer layers
             dim_feedforward: Dimension of feedforward network
             dropout: Dropout rate
-            learning_rate: Learning rate for optimizer
-            batch_size: Batch size for training
-            epochs: Number of training epochs
+            weight_decay: Weight decay for optimizer
+            mixup: MixUp augmentation config
+            label_smoothing: Label smoothing factor
+            optimizer: Optimizer configuration
+            scheduler: Learning rate scheduler configuration
+            training: Training configuration
+            random_seed: Random seed for reproducibility
             device: Device to use ('cpu' or 'cuda')
         """
         self.d_model = d_model
         self.nhead = nhead
         self.num_layers = num_layers
         self.dim_feedforward = dim_feedforward
-        self.dropout = dropout
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')
+        self.dropout = float(dropout)
+        self.weight_decay = float(weight_decay)
+        self.mixup = mixup or {'enabled': False}
+        self.label_smoothing = float(label_smoothing or 0.0)
+        self.optimizer_cfg = optimizer or {'name': 'Adam', 'lr': learning_rate}
+        self.scheduler_cfg = scheduler or {'name': None}
+        training = training or {}
+        self.batch_size = int(training.get('batch_size', batch_size))
+        self.epochs = int(training.get('epochs', epochs))
+        self.auto_device = bool(training.get('auto_device', True))
+        self.random_seed = random_seed
+        
+        # Device selection
+        if device:
+            self.device = device
+        else:
+            self.device = 'cuda' if torch.cuda.is_available() and self.auto_device else 'cpu'
+        
         self.model = None
         self.model_name = "Transformer"
         self.input_dim = None
@@ -414,6 +448,11 @@ class TransformerClassifier:
     
     def train(self, X_train: pd.DataFrame, y_train: pd.Series) -> None:
         """Train the model."""
+        # Set random seed if provided
+        if self.random_seed is not None:
+            np.random.seed(self.random_seed)
+            torch.manual_seed(self.random_seed)
+        
         # Convert to tensors
         X_np = self._to_numpy(X_train)
         X_tensor = torch.FloatTensor(X_np)
@@ -428,28 +467,80 @@ class TransformerClassifier:
         self.output_dim = len(np.unique(y_train))
         self.model = self._build_model().to(self.device)
         
-        # Loss and optimizer
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        # Loss with label smoothing support
+        if self.label_smoothing and self.label_smoothing > 0:
+            try:
+                criterion = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
+            except TypeError:
+                # Older PyTorch doesn't support label_smoothing arg
+                criterion = nn.CrossEntropyLoss()
+        else:
+            criterion = nn.CrossEntropyLoss()
         
-        # Training loop
+        # Optimizer configuration
+        opt_name = str(self.optimizer_cfg.get('name', 'Adam'))
+        lr = float(self.optimizer_cfg.get('lr', 0.001))
+        betas = tuple(self.optimizer_cfg.get('betas', (0.9, 0.999)))
+        eps = float(self.optimizer_cfg.get('eps', 1e-8))
+        
+        if opt_name.lower() in ['adamw', 'adam_w', 'adam-w']:
+            optimizer = optim.AdamW(self.model.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=self.weight_decay)
+        else:
+            optimizer = optim.Adam(self.model.parameters(), lr=lr, betas=betas, eps=eps)
+        
+        # Scheduler: cosine with warmup if requested
+        scheduler = None
+        sched = self.scheduler_cfg or {}
+        if isinstance(sched, dict) and str(sched.get('name', '')).lower() == 'cosine':
+            total_steps = max(1, len(dataloader) * self.epochs)
+            warmup_prop = float(sched.get('warmup_proportion', 0.0))
+            warmup_steps = int(total_steps * warmup_prop)
+            min_lr = float(sched.get('min_lr', 0.0))
+            
+            def lr_lambda(current_step: int):
+                if current_step < warmup_steps and warmup_steps > 0:
+                    return float(current_step) / float(max(1, warmup_steps))
+                # Cosine decay after warmup
+                progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+                cosine_decay = 0.5 * (1.0 + np.cos(np.pi * progress))
+                return max(min_lr / lr, float(cosine_decay))
+            
+            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        
+        # Training loop with MixUp support
         self.model.train()
         for epoch in range(self.epochs):
-            total_loss = 0
+            total_loss = 0.0
             for batch_X, batch_y in dataloader:
-                batch_X, batch_y = batch_X.to(self.device), batch_y.to(self.device)
+                batch_X = batch_X.to(self.device)
+                batch_y = batch_y.to(self.device)
                 
-                optimizer.zero_grad()
-                outputs = self.model(batch_X)
-                loss = criterion(outputs, batch_y)
+                # MixUp augmentation
+                if self.mixup and self.mixup.get('enabled', False):
+                    alpha = float(self.mixup.get('alpha', 0.2))
+                    lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0
+                    idx = torch.randperm(batch_X.size(0))
+                    mixed_X = lam * batch_X + (1 - lam) * batch_X[idx]
+                    targets_a, targets_b = batch_y, batch_y[idx]
+                    optimizer.zero_grad()
+                    outputs = self.model(mixed_X)
+                    # Compute mixup loss: lam * loss(pred, a) + (1-lam) * loss(pred, b)
+                    loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(outputs, targets_b)
+                else:
+                    optimizer.zero_grad()
+                    outputs = self.model(batch_X)
+                    loss = criterion(outputs, batch_y)
+                
                 loss.backward()
                 optimizer.step()
+                if scheduler is not None:
+                    scheduler.step()
                 
                 total_loss += loss.item()
             
-            if (epoch + 1) % 10 == 0:
+            if (epoch + 1) % 10 == 0 or epoch == 0:
                 avg_loss = total_loss / len(dataloader)
-                print(f"Epoch [{epoch+1}/{self.epochs}], Loss: {avg_loss:.4f}")
+                print(f"Epoch [{epoch+1}/{self.epochs}], Loss: {avg_loss:.6f}")
 
     def _to_numpy(self, X):
         """Convert input X to a numpy array.
