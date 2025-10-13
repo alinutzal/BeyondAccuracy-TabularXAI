@@ -91,20 +91,33 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
         shap_importance = shap_explainer.get_feature_importance(X_test.head(100))
         
         # Save SHAP plots
-        shap_explainer.plot_summary(X_test.head(100), 
-                                    save_path=os.path.join(experiment_dir, 'shap_summary.png'))
-        shap_explainer.plot_feature_importance(X_test.head(100),
-                                               save_path=os.path.join(experiment_dir, 'shap_importance.png'))
+        try:
+            shap_explainer.plot_summary(X_test.head(100), 
+                                        save_path=os.path.join(experiment_dir, 'shap_summary.png'))
+        except Exception as plot_err:
+            print(f"Warning: SHAP summary plot failed: {plot_err}")
+        
+        try:
+            shap_explainer.plot_feature_importance(X_test.head(100),
+                                                   save_path=os.path.join(experiment_dir, 'shap_importance.png'))
+        except Exception as plot_err:
+            print(f"Warning: SHAP importance plot failed: {plot_err}")
         
         # Get SHAP explanations for metrics
         shap_explanations = []
         for i in range(min(50, len(X_test))):
-            exp = shap_explainer.explain_instance(X_test.iloc[i])
-            shap_explanations.append(exp)
+            try:
+                exp = shap_explainer.explain_instance(X_test.iloc[i])
+                shap_explanations.append(exp)
+            except Exception as exp_err:
+                print(f"Warning: SHAP explanation for instance {i} failed: {exp_err}")
+                continue
         
         print(f"Generated SHAP explanations for {len(shap_explanations)} instances")
     except Exception as e:
         print(f"SHAP explanation failed: {e}")
+        import traceback
+        traceback.print_exc()
         shap_importance = None
         shap_explanations = []
     
@@ -115,28 +128,37 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
         lime_importance = lime_explainer.get_feature_importance(X_test, num_samples=50)
         
         # Save LIME plots
-        lime_explainer.plot_feature_importance(X_test, num_samples=50,
-                                              save_path=os.path.join(experiment_dir, 'lime_importance.png'))
+        try:
+            lime_explainer.plot_feature_importance(X_test, num_samples=50,
+                                                  save_path=os.path.join(experiment_dir, 'lime_importance.png'))
+        except Exception as plot_err:
+            print(f"Warning: LIME plot failed: {plot_err}")
         
         # Get LIME explanations for metrics
         lime_explanations = []
         for i in range(min(50, len(X_test))):
-            exp = lime_explainer.explain_instance(X_test.iloc[i].values, num_features=10)
-            exp_dict = dict(exp.as_list())
-            # Convert to feature-based dict
-            feature_exp = {}
-            for feature in X_test.columns:
-                for key, val in exp_dict.items():
-                    if feature in key:
-                        feature_exp[feature] = val
-                        break
-                if feature not in feature_exp:
-                    feature_exp[feature] = 0.0
-            lime_explanations.append(feature_exp)
+            try:
+                exp = lime_explainer.explain_instance(X_test.iloc[i].values, num_features=10)
+                exp_dict = dict(exp.as_list())
+                # Convert to feature-based dict
+                feature_exp = {}
+                for feature in X_test.columns:
+                    for key, val in exp_dict.items():
+                        if feature in key:
+                            feature_exp[feature] = val
+                            break
+                    if feature not in feature_exp:
+                        feature_exp[feature] = 0.0
+                lime_explanations.append(feature_exp)
+            except Exception as exp_err:
+                print(f"Warning: LIME explanation for instance {i} failed: {exp_err}")
+                continue
         
         print(f"Generated LIME explanations for {len(lime_explanations)} instances")
     except Exception as e:
         print(f"LIME explanation failed: {e}")
+        import traceback
+        traceback.print_exc()
         lime_importance = None
         lime_explanations = []
     
@@ -173,15 +195,29 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
     except Exception as e:
         print(f"Error calculating interpretability metrics: {e}")
     
-    # Save results
+    # Save results - convert numpy types to native Python types
+    def convert_to_native(obj):
+        """Convert numpy types to native Python types for JSON serialization."""
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, dict):
+            return {k: convert_to_native(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_to_native(item) for item in obj]
+        return obj
+    
     results = {
         'dataset': dataset_name,
         'model': model_name,
         'timestamp': datetime.now().isoformat(),
-        'dataset_info': loader.get_dataset_info(),
-        'train_metrics': train_metrics,
-        'test_metrics': test_metrics,
-        'interpretability_metrics': interpretability_metrics
+        'dataset_info': convert_to_native(loader.get_dataset_info()),
+        'train_metrics': convert_to_native(train_metrics),
+        'test_metrics': convert_to_native(test_metrics),
+        'interpretability_metrics': convert_to_native(interpretability_metrics)
     }
     
     # Save as JSON

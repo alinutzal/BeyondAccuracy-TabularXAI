@@ -211,7 +211,8 @@ data/*.csv
 data/*.pkl
 data/*.h5
 !data/README.md
-results/
+results/*/
+!results/.gitkeep
 *.png
 *.jpg
 *.pdf
