@@ -5,6 +5,7 @@ supports isotonic calibration on a holdout, and basic threshold selection helper
 """
 from typing import Dict, Any, Optional
 import numpy as np
+import pandas as pd
 from sklearn.metrics import (
     average_precision_score,
     roc_auc_score,
@@ -19,7 +20,7 @@ from sklearn.model_selection import StratifiedKFold
 import hashlib
 
 
-def run_stratified_cv_evaluation(X, y, model_factory, eval_cfg=None, n_splits=5, random_state=42):
+def run_stratified_cv_evaluation(X, y, model_factory, eval_cfg=None, n_splits=5, random_state=42, dataset_name=None, preprocess_cfg=None):
     """Run stratified K-fold CV using model_factory() to create fresh model instances.
 
     Returns a dict with per-fold metrics and aggregate means.
@@ -28,7 +29,21 @@ def run_stratified_cv_evaluation(X, y, model_factory, eval_cfg=None, n_splits=5,
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     cv_metrics = []
     for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
-        X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+        X_tr, X_val = X.iloc[train_idx].copy(), X.iloc[val_idx].copy()
+        # per-fold preprocessing: standardize breast_cancer (or when requested)
+        pc = preprocess_cfg or {}
+        do_standardize = False
+        if pc.get('standardize_per_fold', False):
+            do_standardize = True
+        if not do_standardize and dataset_name == 'breast_cancer':
+            do_standardize = True
+        if do_standardize:
+            from sklearn.preprocessing import StandardScaler
+            scaler = StandardScaler()
+            X_tr_vals = scaler.fit_transform(X_tr)
+            X_val_vals = scaler.transform(X_val)
+            X_tr = pd.DataFrame(X_tr_vals, columns=X_tr.columns, index=X_tr.index)
+            X_val = pd.DataFrame(X_val_vals, columns=X_val.columns, index=X_val.index)
         y_tr, y_val = y.iloc[train_idx], y.iloc[val_idx]
         m = model_factory()
         m.train(X_tr, y_tr)
@@ -46,7 +61,7 @@ def run_stratified_cv_evaluation(X, y, model_factory, eval_cfg=None, n_splits=5,
     return {'per_fold': cv_metrics, 'aggregate': agg}
 
 
-def run_hash_timeish_split(X, y, model_factory, split_cols, threshold=0.5, eval_cfg=None):
+def run_hash_timeish_split(X, y, model_factory, split_cols, threshold=0.5, eval_cfg=None, dataset_name=None, preprocess_cfg=None):
     """Create a deterministic hash-based split on split_cols and evaluate model on test partition.
 
     Returns a dict with train/test sizes and metrics.
@@ -67,8 +82,21 @@ def run_hash_timeish_split(X, y, model_factory, split_cols, threshold=0.5, eval_
     if mask_train.sum() < 10 or mask_test.sum() < 10:
         raise ValueError('Insufficient samples in hash-based partitions')
 
-    X_tr, y_tr = X.loc[mask_train], y.loc[mask_train]
-    X_te, y_te = X.loc[mask_test], y.loc[mask_test]
+    X_tr, y_tr = X.loc[mask_train].copy(), y.loc[mask_train].copy()
+    X_te, y_te = X.loc[mask_test].copy(), y.loc[mask_test].copy()
+
+    # optional preprocessing per dataset
+    pc = preprocess_cfg or {}
+    do_standardize = False
+    if pc.get('standardize_per_fold', False):
+        do_standardize = True
+    if not do_standardize and dataset_name == 'breast_cancer':
+        do_standardize = True
+    if do_standardize:
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        X_tr = pd.DataFrame(scaler.fit_transform(X_tr), columns=X_tr.columns, index=X_tr.index)
+        X_te = pd.DataFrame(scaler.transform(X_te), columns=X_te.columns, index=X_te.index)
     m = model_factory()
     m.train(X_tr, y_tr)
     ev = Evaluator(eval_cfg)

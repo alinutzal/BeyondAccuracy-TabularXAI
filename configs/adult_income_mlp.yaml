@@ -33,6 +33,9 @@ training:
 
 random_seed: 42
 
+evaluation:
+  type: 5fold_stratified_cv # hash_timeish_split
+
 notes: |
   Model uses GEGLU activations with LayerNorm in each block. Dropout=0.25,
   embedding dropout=0.1, weight decay=2e-4. MixUp alpha=0.2 and label smoothing=0.03.
