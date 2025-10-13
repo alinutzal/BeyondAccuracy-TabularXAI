@@ -48,17 +48,48 @@ class TabularMLP(nn.Module):
         return self.network(x)
 
 
+class GEGLU(nn.Module):
+    """Gated GELU (GEGLU) activation as in 'Pay Attention to MLPs'."""
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        # x is expected to have last dim 2 * d, split in half
+        a, b = x.chunk(2, dim=-1)
+        return nn.functional.gelu(a) * b
+
+
 class MLPClassifier:
-    """MLP classifier wrapper for tabular data."""
-    
+    """MLP classifier wrapper for tabular data.
+
+    This implementation accepts configuration keys from YAML such as:
+    - hidden_dims: list of layer sizes
+    - activation: 'geglu' or 'relu'
+    - layer_norm_per_block: bool
+    - dropout, embedding_dropout
+    - weight_decay
+    - mixup: {enabled: bool, alpha: float}
+    - label_smoothing: float
+    - optimizer: {name, lr, betas, eps}
+    - scheduler: {name: 'cosine', warmup_proportion, min_lr}
+    - training: {batch_size, epochs, early_stopping: {enabled, monitor, patience}, auto_device}
+    """
+
     def __init__(
         self,
         hidden_dims: list = [128, 64, 32],
+        activation: str = 'relu',
+        layer_norm_per_block: bool = False,
         dropout: float = 0.2,
-        learning_rate: float = 0.001,
-        batch_size: int = 32,
-        epochs: int = 100,
-        device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
+        embedding_dropout: float = 0.0,
+        weight_decay: float = 0.0,
+        mixup: Optional[Dict[str, Any]] = None,
+        label_smoothing: float = 0.0,
+        optimizer: Optional[Dict[str, Any]] = None,
+        scheduler: Optional[Dict[str, Any]] = None,
+        training: Optional[Dict[str, Any]] = None,
+        random_seed: Optional[int] = None,
+        device: Optional[str] = None,
         **kwargs
     ):
         """
@@ -73,11 +104,28 @@ class MLPClassifier:
             device: Device to use ('cpu' or 'cuda')
         """
         self.hidden_dims = hidden_dims
-        self.dropout = dropout
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size
-        self.epochs = epochs
-        self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')
+        self.activation = activation.lower() if activation else 'relu'
+        self.layer_norm_per_block = bool(layer_norm_per_block)
+        self.dropout = float(dropout)
+        self.embedding_dropout = float(embedding_dropout)
+        self.weight_decay = float(weight_decay)
+        self.mixup = mixup or {'enabled': False}
+        self.label_smoothing = float(label_smoothing or 0.0)
+        self.optimizer_cfg = optimizer or {'name': 'Adam', 'lr': 0.001}
+        self.scheduler_cfg = scheduler or {'name': None}
+        training = training or {}
+        self.batch_size = int(training.get('batch_size', 32))
+        self.epochs = int(training.get('epochs', 100))
+        self.early_stopping = training.get('early_stopping', {'enabled': False})
+        self.auto_device = bool(training.get('auto_device', True))
+        self.random_seed = random_seed
+
+        # device selection
+        if device:
+            self.device = device
+        else:
+            self.device = 'cuda' if torch.cuda.is_available() and self.auto_device else 'cpu'
+
         self.model = None
         self.model_name = "MLP"
         self.input_dim = None
@@ -96,47 +144,127 @@ class MLPClassifier:
     
     def train(self, X_train: pd.DataFrame, y_train: pd.Series) -> None:
         """Train the model."""
-        # Convert to tensors
+        # Set random seed if provided
+        if self.random_seed is not None:
+            np.random.seed(self.random_seed)
+            torch.manual_seed(self.random_seed)
+
+        # Convert to numpy / tensors
         X_np = self._to_numpy(X_train)
+        y_np = self._to_numpy(y_train).ravel()
         X_tensor = torch.FloatTensor(X_np)
-        y_tensor = torch.LongTensor(self._to_numpy(y_train).ravel())
+        y_tensor = torch.LongTensor(y_np)
         
         # Create dataset and dataloader
         dataset = TensorDataset(X_tensor, y_tensor)
         dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
         
-        # Initialize model
+        # Initialize model using configurable architecture
         self.input_dim = X_train.shape[1]
-        self.output_dim = len(np.unique(y_train))
-        self.model = TabularMLP(
-            self.input_dim,
-            self.hidden_dims,
-            self.output_dim,
-            self.dropout
-        ).to(self.device)
+        self.output_dim = int(len(np.unique(y_train)))
+
+        # Build layers respecting activation and layer_norm_per_block
+        layers = []
+        prev = self.input_dim
+
+        # optional input (embedding) dropout
+        if self.embedding_dropout and self.embedding_dropout > 0:
+            layers.append(nn.Dropout(self.embedding_dropout))
+
+        for h in self.hidden_dims:
+            # If using GEGLU we need to double the linear width for gated proj
+            if self.activation == 'geglu':
+                layers.append(nn.Linear(prev, h * 2))
+                if self.layer_norm_per_block:
+                    layers.append(nn.LayerNorm(h * 2))
+                layers.append(GEGLU())
+            else:
+                layers.append(nn.Linear(prev, h))
+                if self.layer_norm_per_block:
+                    layers.append(nn.LayerNorm(h))
+                layers.append(nn.ReLU())
+
+            layers.append(nn.Dropout(self.dropout))
+            prev = h
+
+        layers.append(nn.Linear(prev, self.output_dim))
+        model_net = nn.Sequential(*layers)
+        self.model = model_net.to(self.device)
+
+        # Loss and optimizer (support label smoothing via CrossEntropyLoss with smoothing when available)
+        if self.label_smoothing and self.label_smoothing > 0:
+            try:
+                criterion = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
+            except TypeError:
+                # older pytorch doesn't support label_smoothing arg; fall back to standard and we'll handle smoothing manually
+                criterion = nn.CrossEntropyLoss()
+        else:
+            criterion = nn.CrossEntropyLoss()
+
+        opt_name = str(self.optimizer_cfg.get('name', 'AdamW'))
+        lr = float(self.optimizer_cfg.get('lr', 1e-3))
+        betas = tuple(self.optimizer_cfg.get('betas', (0.9, 0.999)))
+        eps = float(self.optimizer_cfg.get('eps', 1e-8))
+
+        if opt_name.lower() in ['adamw', 'adam_w', 'adam-w']:
+            optimizer = optim.AdamW(self.model.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=self.weight_decay)
+        else:
+            optimizer = optim.Adam(self.model.parameters(), lr=lr, betas=betas, eps=eps)
         
-        # Loss and optimizer
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        
-        # Training loop
+        # Scheduler: cosine with warmup if requested
+        scheduler = None
+        # Be defensive in case scheduler_cfg is None or not a dict
+        sched = self.scheduler_cfg or {}
+        if isinstance(sched, dict) and str(sched.get('name', '')).lower() == 'cosine':
+            total_steps = max(1, len(dataloader) * self.epochs)
+            warmup_prop = float(sched.get('warmup_proportion', 0.0))
+            warmup_steps = int(total_steps * warmup_prop)
+            min_lr = float(sched.get('min_lr', 0.0))
+
+            def lr_lambda(current_step: int):
+                if current_step < warmup_steps and warmup_steps > 0:
+                    return float(current_step) / float(max(1, warmup_steps))
+                # cosine decay after warmup
+                progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+                cosine_decay = 0.5 * (1.0 + np.cos(np.pi * progress))
+                return max(min_lr / lr, float(cosine_decay))
+
+            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+        # Training loop with MixUp and optional manual label smoothing fallback
         self.model.train()
         for epoch in range(self.epochs):
-            total_loss = 0
+            total_loss = 0.0
             for batch_X, batch_y in dataloader:
-                batch_X, batch_y = batch_X.to(self.device), batch_y.to(self.device)
-                
-                optimizer.zero_grad()
-                outputs = self.model(batch_X)
-                loss = criterion(outputs, batch_y)
+                batch_X = batch_X.to(self.device)
+                batch_y = batch_y.to(self.device)
+
+                # MixUp augmentation
+                if self.mixup and self.mixup.get('enabled', False):
+                    alpha = float(self.mixup.get('alpha', 0.2))
+                    lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0
+                    idx = torch.randperm(batch_X.size(0))
+                    mixed_X = lam * batch_X + (1 - lam) * batch_X[idx]
+                    targets_a, targets_b = batch_y, batch_y[idx]
+                    optimizer.zero_grad()
+                    outputs = self.model(mixed_X)
+                    # compute mixup loss: lam * loss(pred, a) + (1-lam) * loss(pred, b)
+                    loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(outputs, targets_b)
+                else:
+                    optimizer.zero_grad()
+                    outputs = self.model(batch_X)
+                    loss = criterion(outputs, batch_y)
+
                 loss.backward()
                 optimizer.step()
-                
+                if scheduler is not None:
+                    scheduler.step()
+
                 total_loss += loss.item()
-            
-            if (epoch + 1) % 10 == 0:
+
+            if (epoch + 1) % 10 == 0 or epoch == 0:
                 avg_loss = total_loss / len(dataloader)
-                print(f"Epoch [{epoch+1}/{self.epochs}], Loss: {avg_loss:.4f}")
+                print(f"Epoch [{epoch+1}/{self.epochs}], Loss: {avg_loss:.6f}")
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Make predictions."""

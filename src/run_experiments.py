@@ -11,9 +11,14 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from utils.data_loader import DataLoader
+import torch
+import yaml
 from models import XGBoostClassifier, LightGBMClassifier, TabPFNClassifier, MLPClassifier, TransformerClassifier
 from explainability import SHAPExplainer, LIMEExplainer
 from metrics import InterpretabilityMetrics
+from utils.eval import Evaluator
+from sklearn.model_selection import StratifiedKFold
+import hashlib
 
 
 def experiment_exists(dataset_name: str, model_name: str, results_dir: str) -> bool:
@@ -83,32 +88,174 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
     
     # Initialize model
     print(f"\nInitializing {model_name}...")
+    # Load model config from YAML if available (experiment_dir/config.yaml or configs/{dataset}_{model}.yaml)
+    model_kwargs = {}
+    cfg_paths = [
+        os.path.join(experiment_dir, 'config.yaml'),
+        os.path.join('configs', f"{dataset_name}_{model_name}.yaml")
+    ]
+    for cfg_path in cfg_paths:
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, 'r') as cf:
+                    cfg = yaml.safe_load(cf) or {}
+                if isinstance(cfg, dict):
+                    # separate eval config from model kwargs
+                    eval_cfg = cfg.pop('eval', None)
+                    model_kwargs.update(cfg)
+                    print(f"Loaded model config from {cfg_path}: {model_kwargs}")
+                break
+            except Exception as e:
+                print(f"Warning: failed to load config {cfg_path}: {e}")
+                break
+    else:
+        eval_cfg = None
+
+    # load dataset-level config (for dataset-specific eval options, e.g. hash split cols)
+    dataset_cfg_path = os.path.join('configs', f"{dataset_name}.yaml")
+    dataset_cfg = {}
+    if os.path.exists(dataset_cfg_path):
+        try:
+            with open(dataset_cfg_path, 'r') as dfc:
+                dataset_cfg = yaml.safe_load(dfc) or {}
+            print(f"Loaded dataset config from {dataset_cfg_path}: {dataset_cfg}")
+        except Exception as e:
+            print(f"Warning: failed to load dataset config {dataset_cfg_path}: {e}")
     if model_name == 'XGBoost':
-        model = XGBoostClassifier(n_estimators=100, max_depth=6, random_state=42)
+        params = {'n_estimators': 100, 'max_depth': 6, 'random_state': 42}
+        params.update(model_kwargs)
+        model = XGBoostClassifier(**params)
         model_type = 'tree'
     elif model_name == 'LightGBM':
-        model = LightGBMClassifier(n_estimators=100, max_depth=6, random_state=42)
+        params = {'n_estimators': 100, 'max_depth': 6, 'random_state': 42}
+        params.update(model_kwargs)
+        model = LightGBMClassifier(**params)
         model_type = 'tree'
     elif model_name == 'TabPFN':
-        model = TabPFNClassifier(device='cpu', N_ensemble_configurations=32)
-        model_type = 'tree'  # TabPFN can work with tree-based explainers
+        # Prefer CUDA if available, otherwise fall back to CPU to avoid CUDA runtime issues
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        params = {'device': device, 'N_ensemble_configurations': 32}
+        params.update(model_kwargs)
+        model = TabPFNClassifier(**params)
+        model_type = 'tabpfn'  # TabPFN can work with tree-based explainers
     elif model_name == 'MLP':
-        model = MLPClassifier(hidden_dims=[128, 64, 32], epochs=100, batch_size=32)
+        params = {'hidden_dims': [128, 64, 32], 'epochs': 100, 'batch_size': 32}
+        params.update(model_kwargs)
+        model = MLPClassifier(**params)
         model_type = 'deep'
     elif model_name == 'Transformer':
-        model = TransformerClassifier(d_model=64, nhead=4, num_layers=2, epochs=100, batch_size=32)
+        params = {'d_model': 64, 'nhead': 4, 'num_layers': 2, 'epochs': 100, 'batch_size': 32}
+        params.update(model_kwargs)
+        model = TransformerClassifier(**params)
         model_type = 'deep'
     else:
         raise ValueError(f"Unknown model: {model_name}")
     
     # Train model
     print(f"Training {model_name}...")
+    # If eval config requests a calibration holdout, split it off before training
+    calibrator_holdout = None
+    evaluator = Evaluator(eval_cfg)
+    if eval_cfg and eval_cfg.get('post_train', {}).get('isotonic_calibration', False):
+        holdout_frac = float(eval_cfg.get('post_train', {}).get('calibration_holdout_fraction', 0.1))
+        if holdout_frac > 0.0:
+            # simple random split from training set
+            rs = np.random.RandomState(42)
+            n = len(X_train)
+            hold_size = int(n * holdout_frac)
+            if hold_size > 0:
+                idx = np.arange(n)
+                rs.shuffle(idx)
+                hold_idx = idx[:hold_size]
+                train_idx = idx[hold_size:]
+                X_hold = X_train.iloc[hold_idx]
+                y_hold = y_train.iloc[hold_idx]
+                X_train = X_train.iloc[train_idx]
+                y_train = y_train.iloc[train_idx]
+                calibrator_holdout = (X_hold, y_hold)
+
     model.train(X_train, y_train)
     
     # Evaluate model
     print("Evaluating model...")
-    train_metrics = model.evaluate(X_train, y_train)
-    test_metrics = model.evaluate(X_test, y_test)
+    # Compute raw metrics
+    train_metrics = evaluator.evaluate_model(model, X_train, y_train)
+    test_metrics = evaluator.evaluate_model(model, X_test, y_test)
+
+    # Optionally fit isotonic calibration on holdout and produce calibrated test metrics
+    if calibrator_holdout is not None:
+        X_hold, y_hold = calibrator_holdout
+        try:
+            # collect holdout probabilities
+            y_hold_proba = model.predict_proba(X_hold)
+            if y_hold_proba.ndim == 2 and y_hold_proba.shape[1] > 1:
+                y_hold_proba = y_hold_proba[:, 1]
+            ir = evaluator.fit_isotonic(y_hold.values, y_hold_proba)
+            # apply to test set
+            y_test_proba = model.predict_proba(X_test)
+            if y_test_proba.ndim == 2 and y_test_proba.shape[1] > 1:
+                y_test_proba = y_test_proba[:, 1]
+            y_test_cal = evaluator.apply_calibration(ir, y_test_proba)
+            # recompute test metrics on calibrated probabilities
+            calibrated_metrics = evaluator.compute_metrics(y_test.values, y_test_cal)
+            test_metrics['calibrated'] = calibrated_metrics
+        except Exception as e:
+            print(f"Warning: calibration failed: {e}")
+
+    # Special per-dataset evaluations
+    evaluations_results = {}
+    def make_model_instance():
+        # create a fresh model instance with same kwargs
+        params = {}
+        params.update(model_kwargs)
+        if model_name == 'XGBoost':
+            p = {'n_estimators': 100, 'max_depth': 6, 'random_state': 42}
+            p.update(params)
+            return XGBoostClassifier(**p)
+        elif model_name == 'LightGBM':
+            p = {'n_estimators': 100, 'max_depth': 6, 'random_state': 42}
+            p.update(params)
+            return LightGBMClassifier(**p)
+        elif model_name == 'TabPFN':
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            p = {'device': device, 'N_ensemble_configurations': 32}
+            p.update(params)
+            return TabPFNClassifier(**p)
+        elif model_name == 'MLP':
+            p = {'hidden_dims': [128, 64, 32], 'epochs': 100, 'batch_size': 32}
+            p.update(params)
+            return MLPClassifier(**p)
+        elif model_name == 'Transformer':
+            p = {'d_model': 64, 'nhead': 4, 'num_layers': 2, 'epochs': 100, 'batch_size': 32}
+            p.update(params)
+            return TransformerClassifier(**p)
+        else:
+            raise ValueError(f"Unknown model: {model_name}")
+
+    if dataset_name == 'adult_income':
+        print('\nRunning special adult_income evaluations...')
+        try:
+            from utils.eval import run_stratified_cv_evaluation, run_hash_timeish_split
+
+            def model_factory():
+                return make_model_instance()
+
+            cv_res = run_stratified_cv_evaluation(X, y, model_factory, eval_cfg=eval_cfg, n_splits=5)
+            evaluations_results['5fold_stratified_cv'] = cv_res
+
+            # hash-based split on the requested columns
+            # hash split columns and threshold can be configured in configs/adult_income.yaml
+            hs = dataset_cfg.get('hash_split', {}) if dataset_cfg else {}
+            split_cols = hs.get('columns', ['education-num', 'age', 'workclass'])
+            threshold = float(hs.get('threshold', 0.5))
+            hash_res = run_hash_timeish_split(X, y, model_factory, split_cols, threshold=threshold, eval_cfg=eval_cfg)
+            evaluations_results['hash_timeish_split'] = hash_res
+        except Exception as e:
+            print(f"Warning: adult_income special evaluations failed: {e}")
+
+    # attach evaluations to results
+    if len(evaluations_results) > 0:
+        results['evaluations'] = evaluations_results
     
     print("\nTraining Metrics:")
     for metric, value in train_metrics.items():
@@ -339,8 +486,7 @@ def run_all_experiments(results_dir: str = '../results', rerun: bool = False):
 
 
 if __name__ == '__main__':
-    import sys
-    
+    import sys    
     # Get absolute path to results directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
     results_dir = os.path.join(os.path.dirname(script_dir), 'results')

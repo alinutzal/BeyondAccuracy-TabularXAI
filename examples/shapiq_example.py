@@ -22,8 +22,8 @@ def main():
     print("going beyond individual feature importance to show feature synergies.\n")
     
     # 1. Load Data
-    print("1. Loading Breast Cancer dataset...")
-    loader = DataLoader('breast_cancer', random_state=42)
+    print("1. Loading Adult Income dataset...")
+    loader = DataLoader('adult_income', random_state=42)
     X, y = loader.load_data()
     data = loader.prepare_data(X, y, test_size=0.2)
     

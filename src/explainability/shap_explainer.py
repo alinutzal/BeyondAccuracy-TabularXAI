@@ -8,6 +8,7 @@ import shap
 from typing import Dict, Any, Optional
 import matplotlib.pyplot as plt
 
+from tabpfn_extensions import TabPFNClassifier, interpretability
 
 class SHAPExplainer:
     """SHAP explainer for model interpretability."""
@@ -19,7 +20,7 @@ class SHAPExplainer:
         Args:
             model: Trained model
             X_train: Training data for background
-            model_type: Type of explainer ('tree', 'kernel', 'deep')
+            model_type: Type of explainer ('tree', 'kernel', 'deep', 'tabpfn')
         """
         self.model = model
         self.X_train = X_train
@@ -27,7 +28,7 @@ class SHAPExplainer:
         self.explainer = None
         self.shap_values = None
         
-    def explain(self, X_test: pd.DataFrame) -> np.ndarray:
+    def explain(self, X_test: pd.DataFrame, background_samples: int = 50, nsamples: Optional[int] = None) -> np.ndarray:
         """
         Generate SHAP values for test data.
         
@@ -39,13 +40,34 @@ class SHAPExplainer:
         """
         if self.model_type == 'tree':
             # For tree-based models (XGBoost, LightGBM)
-            self.explainer = shap.TreeExplainer(self.model.model)
-            self.shap_values = self.explainer.shap_values(X_test)
+            try:
+                self.explainer = shap.TreeExplainer(self.model.model)
+                self.shap_values = self.explainer.shap_values(X_test)
+            except Exception as e:
+                # Fallback for unsupported tree model types (e.g., TabPFN)
+                print(f"SHAP TreeExplainer failed: {e}. Falling back to KernelExplainer.")
+                background = shap.sample(self.X_train, background_samples)
+                self.explainer = shap.KernelExplainer(self.model.predict_proba, background)
+                # Pass nsamples to limit KernelExplainer calls when provided
+                if nsamples is not None:
+                    self.shap_values = self.explainer.shap_values(X_test, nsamples=nsamples)
+                else:
+                    self.shap_values = self.explainer.shap_values(X_test)
         elif self.model_type == 'deep':
             # For deep learning models
-            background = shap.sample(self.X_train, 100)
+            background = shap.sample(self.X_train, background_samples)
             self.explainer = shap.KernelExplainer(self.model.predict_proba, background)
-            self.shap_values = self.explainer.shap_values(X_test)
+            if nsamples is not None:
+                self.shap_values = self.explainer.shap_values(X_test, nsamples=nsamples)
+            else:
+                self.shap_values = self.explainer.shap_values(X_test)
+        elif self.model_type == 'tabpfn':
+            shap_values = interpretability.shap.get_shap_values(
+                estimator=self.model,
+                test_x=X_test[:nsamples],
+                attribute_names=self.X_train.columns.tolist(),
+                algorithm="permutation",
+                )
         else:
             # Default to KernelExplainer
             background = shap.sample(self.X_train, 100)

@@ -1,0 +1,47 @@
+hidden_dims: [768,512,256]
+activation: geglu
+layer_norm_per_block: true
+dropout: 0.3
+embedding_dropout: 0.1
+weight_decay: 3e-4
+
+gaussian_noise:
+  numeric_sigma: 0.02
+
+mixup:
+  enabled: true
+  alpha: 0.1
+
+label_smoothing: 0.0
+
+optimizer:
+  name: AdamW
+  lr: 8e-4
+  betas: [0.9, 0.999]
+  eps: 1e-8
+
+swa:
+  enabled: true
+  final_epochs: 20
+
+scheduler:
+  name: cosine
+  warmup_proportion: 0.08
+  min_lr: 0.0
+
+training:
+  batch_size: 32
+  epochs: 250
+  early_stopping:
+    enabled: true
+    monitor: pr_auc
+    patience: 20
+  auto_device: true
+
+random_seed: 42
+
+notes: |
+  Hidden dims [768,512,256], GEGLU activations with LayerNorm per block.
+  Dropout=0.3, embedding dropout=0.1, gaussian noise sigma=0.02 on numeric inputs.
+  AdamW lr=8e-4, weight decay=3e-4, cosine scheduler, 250 epochs.
+  Early stopping monitors PR-AUC. MixUp alpha=0.1 (light). SWA enabled for final 20 epochs.

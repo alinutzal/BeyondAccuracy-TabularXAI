@@ -1,0 +1,58 @@
+feature_tokenizer:
+  numeric:
+    scaler: learnable_linear  # learnable linear scaler per numeric column
+    quantile_embedding:
+      enabled: true
+      bins: 128
+      embedding_dim: 32
+  categorical:
+    embedding_dim: 32
+  column_id_embedding_dim: 32
+  type_embedding_dim: 16
+
+transformer:
+  d_model: 256
+  nhead: 8
+  num_layers: 4
+  dim_feedforward: 512
+  ffn_activation: geglu
+  dropout: 0.3
+  stochastic_depth: 0.1
+
+optimizer:
+  name: AdamW
+  lr: 5e-4
+  betas: [0.9, 0.999]
+  eps: 1e-8
+  weight_decay: 3e-4
+
+scheduler:
+  name: cosine
+  warmup_proportion: 0.08
+  min_lr: 0.0
+
+training:
+  batch_size: 64
+  epochs: 300
+  early_stopping:
+    enabled: true
+    monitor: oof_auc
+    patience: 20
+  auto_device: true
+
+swa:
+  enabled: true
+  final_epochs: 20
+
+precision:
+  keep_layernorm_fp32: true
+  keep_softmax_fp32: true
+
+random_seed: 42
+
+notes: |
+  FeatureTokenizer: numerics use a learnable linear scaler and optional 128-bin quantile
+  embeddings; categoricals use embeddings. Column-id and type embeddings included.
+  Transformer: d_model=256, heads=8, layers=4, FFN=512 (GEGLU), dropout=0.3, stochastic
+  depth=0.1. Optimizer AdamW lr=5e-4 wd=3e-4, cosine scheduler, 300 epochs. SWA for last
+  20 epochs. Keep softmax and LayerNorm operations in FP32 for numerical stability.

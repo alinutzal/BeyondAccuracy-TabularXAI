@@ -1,0 +1,67 @@
+feature_tokenizer:
+  numeric:
+    scaler: learnable_linear
+    quantile_embedding:
+      enabled: false
+  categorical:
+    embedding_dim: 32
+  column_id_embedding_dim: 32
+  type_embedding_dim: 16
+
+transformer:
+  d_model: 256
+  nhead: 4
+  num_layers: 6
+  dim_feedforward: 640
+  ffn_activation: geglu
+  dropout: 0.35
+  stochastic_depth: 0.15
+
+gating_tower:
+  enabled: true
+  hidden_dim: 256
+  residual: true
+
+loss:
+  type: focal
+  focal_gamma: 2.0
+
+optimizer:
+  name: AdamW
+  lr: 1e-3
+  betas: [0.9, 0.999]
+  eps: 1e-8
+  weight_decay: 5e-4
+
+scheduler:
+  name: cosine
+  warmup_proportion: 0.08
+  min_lr: 0.0
+
+training:
+  batch_size: 32
+  epochs: 300
+  early_stopping:
+    enabled: true
+    monitor: pr_auc
+    patience: 50
+  auto_device: true
+
+swa:
+  enabled: true
+  final_epochs: 30
+
+monitoring:
+  metrics: [pr_auc, brier_score]
+
+post_train:
+  isotonic_calibration: true
+  calibration_holdout_fraction: 0.1
+
+random_seed: 42
+
+notes: |
+  Transformer for breast cancer: d_model=256, heads=4, depth=6, FFN=640, GEGLU, dropout=0.35,
+  stochastic_depth=0.15. Small gating tower (two-layer MLP 256->1 with residual) on top for
+  calibration. Loss uses focal (gamma=2) or weighted BCE. Monitor PR-AUC and Brier; run isotonic
+  calibration post-train on a held-out fold if business thresholds require it.

@@ -1,0 +1,44 @@
+hidden_dims: [128, 64]
+activation: silu  # alternatives: 'geglu' supported by model
+batch_norm_per_block: true
+dropout: 0.4
+embedding_dropout: 0.0
+weight_decay: 5e-4
+
+mixup:
+  enabled: false
+  alpha: 0.0
+
+label_smoothing: 0.02
+
+optimizer:
+  name: AdamW
+  lr: 1e-3
+  betas: [0.9, 0.999]
+  eps: 1e-8
+
+swa:
+  enabled: true
+  final_epochs: 30
+
+scheduler:
+  name: cosine
+  warmup_proportion: 0.08
+  min_lr: 0.0
+
+training:
+  batch_size: 32
+  epochs: 300
+  early_stopping:
+    enabled: true
+    monitor: oof_pr_auc
+    patience: 50
+  auto_device: true
+
+random_seed: 42
+
+notes: |
+  Small MLP for breast cancer: hidden dims [128,64], SiLU activation preferred (GEGLU available),
+  BatchNorm per block (works well on small datasets), dropout=0.4, weight decay=5e-4.
+  AdamW lr=1e-3, cosine scheduler, 300 epochs with early stopping (patience=50) monitoring OOF PR-AUC.
+  Label smoothing set to 0.02. SWA enabled for final 30 epochs.
