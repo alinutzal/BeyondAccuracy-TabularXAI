@@ -122,6 +122,14 @@ python run_experiments.py breast_cancer XGBoost
 - `LightGBM`
 - `Transformer`
 
+#### Skipping duplicate experiments:
+By default, if results already exist for a dataset-model combination, the experiment will be skipped. To force rerunning:
+```bash
+cd src
+python run_experiments.py --rerun  # Rerun all experiments
+python run_experiments.py breast_cancer XGBoost --rerun  # Rerun specific experiment
+```
+
 ### Using Jupyter Notebooks
 
 Start Jupyter:

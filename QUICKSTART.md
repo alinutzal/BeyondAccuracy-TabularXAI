@@ -53,6 +53,13 @@ This will run experiments for:
 
 Results will be saved in the `results/` directory, with a summary in `results/summary.csv`.
 
+**Note:** If results already exist for a dataset-model combination, the experiment will be skipped automatically to save time. To force rerunning experiments, use the `--rerun` flag:
+```bash
+cd src
+python run_experiments.py --rerun  # Rerun all experiments
+python run_experiments.py breast_cancer XGBoost --rerun  # Rerun specific experiment
+```
+
 ### Option 3: Use Jupyter Notebooks
 
 For interactive exploration, use the provided notebooks:

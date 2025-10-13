@@ -16,7 +16,24 @@ from explainability import SHAPExplainer, LIMEExplainer
 from metrics import InterpretabilityMetrics
 
 
-def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../results'):
+def experiment_exists(dataset_name: str, model_name: str, results_dir: str) -> bool:
+    """
+    Check if experiment results already exist for a dataset and model combination.
+    
+    Args:
+        dataset_name: Name of the dataset
+        model_name: Name of the model
+        results_dir: Directory where results are stored
+    
+    Returns:
+        True if results.json exists in the experiment directory, False otherwise
+    """
+    experiment_dir = os.path.join(results_dir, f"{dataset_name}_{model_name}")
+    results_file = os.path.join(experiment_dir, 'results.json')
+    return os.path.exists(results_file)
+
+
+def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../results', rerun: bool = False):
     """
     Run experiment for a specific dataset and model combination.
     
@@ -24,7 +41,22 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
         dataset_name: Name of the dataset
         model_name: Name of the model
         results_dir: Directory to save results
+        rerun: If False and results already exist, skip the experiment. If True, rerun regardless.
     """
+    # Check if experiment results already exist
+    if not rerun and experiment_exists(dataset_name, model_name, results_dir):
+        experiment_dir = os.path.join(results_dir, f"{dataset_name}_{model_name}")
+        print(f"\n{'='*80}")
+        print(f"Skipping experiment: {dataset_name} + {model_name}")
+        print(f"Results already exist at: {experiment_dir}")
+        print(f"Use --rerun flag to force rerun this experiment")
+        print(f"{'='*80}\n")
+        
+        # Load and return existing results
+        results_file = os.path.join(experiment_dir, 'results.json')
+        with open(results_file, 'r') as f:
+            return json.load(f)
+    
     print(f"\n{'='*80}")
     print(f"Running experiment: {dataset_name} + {model_name}")
     print(f"{'='*80}\n")
@@ -242,12 +274,13 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
     return results
 
 
-def run_all_experiments(results_dir: str = '../results'):
+def run_all_experiments(results_dir: str = '../results', rerun: bool = False):
     """
     Run experiments for all dataset and model combinations.
     
     Args:
         results_dir: Directory to save results
+        rerun: If False and results already exist, skip the experiment. If True, rerun regardless.
     """
     datasets = ['breast_cancer', 'adult_income', 'bank_marketing']
     models = ['XGBoost', 'LightGBM', 'Transformer']
@@ -257,7 +290,7 @@ def run_all_experiments(results_dir: str = '../results'):
     for dataset in datasets:
         for model in models:
             try:
-                result = run_experiment(dataset, model, results_dir)
+                result = run_experiment(dataset, model, results_dir, rerun=rerun)
                 all_results.append(result)
             except Exception as e:
                 print(f"\nError running {dataset} + {model}: {e}")
@@ -294,12 +327,17 @@ if __name__ == '__main__':
     script_dir = os.path.dirname(os.path.abspath(__file__))
     results_dir = os.path.join(os.path.dirname(script_dir), 'results')
     
+    # Check for --rerun flag
+    rerun = '--rerun' in sys.argv
+    if rerun:
+        sys.argv.remove('--rerun')
+    
     if len(sys.argv) > 1:
         # Run single experiment
         dataset = sys.argv[1]
         model = sys.argv[2] if len(sys.argv) > 2 else 'XGBoost'
-        run_experiment(dataset, model, results_dir)
+        run_experiment(dataset, model, results_dir, rerun=rerun)
     else:
         # Run all experiments
-        summary = run_all_experiments(results_dir)
+        summary = run_all_experiments(results_dir, rerun=rerun)
         print("\n" + summary.to_string())
