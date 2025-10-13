@@ -58,6 +58,28 @@ python examples/waterfall_plot_example.py
 - Visualizes feature contributions for individual predictions
 - Shows the "flow" of Shapley values from base to final prediction
 
+### shapiq_example.py
+
+Demonstrates ShapIQ (Shapley Interaction Quantification) for feature interactions:
+1. Train a model on breast cancer dataset
+2. Compute Shapley interaction values
+3. Identify top feature interactions
+4. Create interaction visualizations (network plots, heatmaps)
+5. Explain individual predictions with interaction effects
+
+**Run it:**
+```bash
+python examples/shapiq_example.py
+```
+
+**Expected output:**
+- Top feature interactions ranked by strength
+- Interaction network plot saved to `results/shapiq_plots/`
+- Interaction heatmap showing all pairwise interactions
+- Single instance explanation with interaction effects
+
+**Note:** Requires shapiq library: `pip install shapiq`
+
 ## Creating Your Own Examples
 
 You can create custom examples by following this pattern:
@@ -69,7 +91,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from utils.data_loader import DataLoader
 from models import XGBoostClassifier, LightGBMClassifier, TransformerClassifier
-from explainability import SHAPExplainer, LIMEExplainer
+from explainability import SHAPExplainer, LIMEExplainer, ShapIQExplainer
 from metrics import InterpretabilityMetrics
 
 # 1. Load data
