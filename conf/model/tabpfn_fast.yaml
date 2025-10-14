@@ -1,0 +1,15 @@
+# @package _global_
+# Fast TabPFN configuration - optimized for speed
+# Use this when you need quick results
+
+model:
+  name: TabPFN
+  params:
+    # Device to run on
+    device: cuda
+    
+    # Fewer ensemble configurations for faster inference
+    N_ensemble_configurations: 8
+    
+    # Random seed for reproducibility
+    random_state: 42
