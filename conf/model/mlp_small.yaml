@@ -1,0 +1,48 @@
+# @package _global_
+# Small MLP configuration - fast training, good for small datasets
+
+model:
+  name: MLP
+  params:
+    hidden_dims: [64, 32]
+    activation: silu
+    batch_norm_per_block: true
+    dropout: 0.4
+    embedding_dropout: 0.0
+    weight_decay: 5e-4
+    
+    mixup:
+      enabled: false
+      alpha: 0.0
+    
+    gaussian_noise:
+      enabled: true
+      std: 0.01
+    
+    label_smoothing: 0.02
+    
+    optimizer:
+      name: AdamW
+      lr: 0.001
+      betas: [0.9, 0.999]
+      eps: 1e-8
+    
+    scheduler:
+      name: cosine
+      warmup_proportion: 0.08
+      min_lr: 0.0
+    
+    swa:
+      enabled: true
+      final_epochs: 20
+    
+    training:
+      batch_size: 128
+      epochs: 200
+      early_stopping:
+        enabled: true
+        monitor: val_loss
+        patience: 30
+      auto_device: true
+    
+    random_seed: 42

@@ -27,6 +27,12 @@ def test_config_files_exist():
         'conf/model/gradient_boosting_default.yaml',
         'conf/model/gradient_boosting_shallow.yaml',
         'conf/model/gradient_boosting_deep.yaml',
+        'conf/model/mlp_default.yaml',
+        'conf/model/mlp_small.yaml',
+        'conf/model/mlp_large.yaml',
+        'conf/model/transformer_default.yaml',
+        'conf/model/transformer_small.yaml',
+        'conf/model/transformer_large.yaml',
     ]
     
     print("\nChecking configuration files...")
@@ -220,6 +226,102 @@ def test_gradient_boosting_configs():
     return True
 
 
+def test_mlp_configs():
+    """Test MLP configuration variants."""
+    print("\n" + "="*80)
+    print("Testing MLP Configuration Variants")
+    print("="*80)
+    
+    configs = {
+        'default': 'conf/model/mlp_default.yaml',
+        'small': 'conf/model/mlp_small.yaml',
+        'large': 'conf/model/mlp_large.yaml'
+    }
+    
+    for variant, path in configs.items():
+        print(f"\n  Testing MLP {variant}...")
+        with open(path, 'r') as f:
+            cfg = yaml.safe_load(f)
+        
+        assert cfg['model']['name'] == 'MLP'
+        params = cfg['model']['params']
+        
+        # Check required parameters
+        assert 'hidden_dims' in params
+        assert 'activation' in params
+        assert 'dropout' in params
+        assert 'training' in params
+        
+        print(f"    hidden_dims: {params['hidden_dims']}")
+        print(f"    activation: {params['activation']}")
+        print(f"    dropout: {params['dropout']}")
+        print(f"    batch_size: {params['training']['batch_size']}")
+        print(f"    epochs: {params['training']['epochs']}")
+        
+        # Verify variant-specific characteristics
+        if variant == 'small':
+            assert len(params['hidden_dims']) <= 2, "Small config should have <= 2 hidden layers"
+            print(f"    ✓ Verified small architecture")
+        elif variant == 'large':
+            assert len(params['hidden_dims']) >= 4, "Large config should have >= 4 hidden layers"
+            print(f"    ✓ Verified large architecture")
+        
+        print(f"  ✓ MLP {variant} configuration validated!")
+    
+    print("\n✓ All MLP configurations validated!")
+    return True
+
+
+def test_transformer_configs():
+    """Test Transformer configuration variants."""
+    print("\n" + "="*80)
+    print("Testing Transformer Configuration Variants")
+    print("="*80)
+    
+    configs = {
+        'default': 'conf/model/transformer_default.yaml',
+        'small': 'conf/model/transformer_small.yaml',
+        'large': 'conf/model/transformer_large.yaml'
+    }
+    
+    for variant, path in configs.items():
+        print(f"\n  Testing Transformer {variant}...")
+        with open(path, 'r') as f:
+            cfg = yaml.safe_load(f)
+        
+        assert cfg['model']['name'] == 'Transformer'
+        params = cfg['model']['params']
+        
+        # Check required parameters
+        assert 'd_model' in params
+        assert 'nhead' in params
+        assert 'num_layers' in params
+        assert 'dropout' in params
+        assert 'training' in params
+        
+        print(f"    d_model: {params['d_model']}")
+        print(f"    nhead: {params['nhead']}")
+        print(f"    num_layers: {params['num_layers']}")
+        print(f"    dropout: {params['dropout']}")
+        print(f"    batch_size: {params['training']['batch_size']}")
+        print(f"    epochs: {params['training']['epochs']}")
+        
+        # Verify variant-specific characteristics
+        if variant == 'small':
+            assert params['d_model'] <= 128, "Small config should have d_model <= 128"
+            assert params['num_layers'] <= 2, "Small config should have <= 2 layers"
+            print(f"    ✓ Verified small architecture")
+        elif variant == 'large':
+            assert params['d_model'] >= 256, "Large config should have d_model >= 256"
+            assert params['num_layers'] >= 4, "Large config should have >= 4 layers"
+            print(f"    ✓ Verified large architecture")
+        
+        print(f"  ✓ Transformer {variant} configuration validated!")
+    
+    print("\n✓ All Transformer configurations validated!")
+    return True
+
+
 def test_omegaconf_compatibility():
     """Test that configs work with OmegaConf."""
     print("\n" + "="*80)
@@ -238,6 +340,19 @@ def test_omegaconf_compatibility():
     assert cfg.model.params.n_estimators == 100
     assert cfg.model.params.learning_rate == 0.1
     
+    # Test deep learning config loading
+    print("\nLoading MLP config with OmegaConf...")
+    mlp_cfg = OmegaConf.load('conf/model/mlp_default.yaml')
+    print(f"  Model name: {mlp_cfg.model.name}")
+    assert mlp_cfg.model.name == 'MLP'
+    assert 'hidden_dims' in mlp_cfg.model.params
+    
+    print("\nLoading Transformer config with OmegaConf...")
+    trans_cfg = OmegaConf.load('conf/model/transformer_default.yaml')
+    print(f"  Model name: {trans_cfg.model.name}")
+    assert trans_cfg.model.name == 'Transformer'
+    assert 'd_model' in trans_cfg.model.params
+    
     print("\n✓ OmegaConf compatibility verified!")
     return True
 
@@ -250,6 +365,8 @@ if __name__ == '__main__':
         test_xgboost_configs()
         test_lightgbm_configs()
         test_gradient_boosting_configs()
+        test_mlp_configs()
+        test_transformer_configs()
         test_omegaconf_compatibility()
         
         print("\n" + "="*80)

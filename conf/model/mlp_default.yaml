@@ -1,0 +1,44 @@
+# @package _global_
+# Default MLP configuration - balanced for general use
+
+model:
+  name: MLP
+  params:
+    hidden_dims: [128, 64, 32]
+    activation: relu
+    batch_norm_per_block: true
+    dropout: 0.3
+    embedding_dropout: 0.0
+    weight_decay: 1e-4
+    
+    mixup:
+      enabled: false
+      alpha: 0.0
+    
+    gaussian_noise:
+      enabled: false
+    
+    label_smoothing: 0.0
+    
+    optimizer:
+      name: Adam
+      lr: 0.001
+      betas: [0.9, 0.999]
+      eps: 1e-8
+    
+    scheduler:
+      name: null
+    
+    swa:
+      enabled: false
+    
+    training:
+      batch_size: 128
+      epochs: 100
+      early_stopping:
+        enabled: true
+        monitor: val_loss
+        patience: 10
+      auto_device: true
+    
+    random_seed: 42
