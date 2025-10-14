@@ -14,7 +14,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from kd import compute_distillation_loss, compute_consistency_penalty, should_enable_distillation, get_distillation_params
+from src.models.kd import compute_distillation_loss, compute_consistency_penalty, should_enable_distillation, get_distillation_params
 
 
 class FastTensorDataLoader:
