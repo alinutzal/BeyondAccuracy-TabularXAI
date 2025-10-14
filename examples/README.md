@@ -4,6 +4,26 @@ This directory contains example scripts demonstrating how to use the BeyondAccur
 
 ## Available Examples
 
+### hydra_example.py
+
+**NEW:** Demonstrates using Hydra configuration management for gradient boosting models:
+1. Shows how to use different parameter configurations
+2. Compares XGBoost, LightGBM, and GradientBoosting variants
+3. Demonstrates the benefits of configuration management
+4. Provides examples of command-line usage
+
+**Run it:**
+```bash
+python examples/hydra_example.py
+```
+
+**Expected output:**
+- Training results for multiple model configurations
+- Performance comparison table
+- Examples of Hydra command-line usage
+
+**Note:** See [HYDRA_QUICKSTART.md](../HYDRA_QUICKSTART.md) for quick start guide or [HYDRA_USAGE.md](../HYDRA_USAGE.md) for detailed documentation.
+
 ### simple_example.py
 
 A complete end-to-end example demonstrating:

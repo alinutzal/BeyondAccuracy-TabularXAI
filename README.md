@@ -122,8 +122,32 @@ python run_experiments.py breast_cancer XGBoost
 #### Available models:
 - `XGBoost`
 - `LightGBM`
+- `GradientBoosting` (sklearn)
 - `TabPFN`
 - `Transformer`
+
+#### Using Hydra for Configuration Management:
+
+For advanced configuration management with parameter sweeps, use the Hydra-enabled runner:
+
+```bash
+cd src
+# Run with default XGBoost configuration
+python run_experiments_hydra.py model=xgboost_default
+
+# Use different configurations
+python run_experiments_hydra.py model=xgboost_shallow  # Better interpretability
+python run_experiments_hydra.py model=xgboost_deep     # Better accuracy
+python run_experiments_hydra.py model=lightgbm_regularized  # Prevent overfitting
+
+# Override specific parameters
+python run_experiments_hydra.py model=xgboost_default model.params.n_estimators=200
+
+# Run parameter sweep
+python run_experiments_hydra.py -m model.params.learning_rate=0.01,0.05,0.1
+```
+
+**See [HYDRA_USAGE.md](HYDRA_USAGE.md) for comprehensive documentation on using Hydra.**
 
 #### Skipping duplicate experiments:
 By default, if results already exist for a dataset-model combination, the experiment will be skipped. To force rerunning:

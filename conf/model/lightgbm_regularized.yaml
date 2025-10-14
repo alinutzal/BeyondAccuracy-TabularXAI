@@ -1,0 +1,18 @@
+# @package _global_
+# LightGBM with strong regularization - reduces overfitting
+
+model:
+  name: LightGBM
+  params:
+    n_estimators: 100
+    max_depth: 5
+    learning_rate: 0.1
+    num_leaves: 31
+    min_child_samples: 20
+    subsample: 0.7
+    colsample_bytree: 0.7
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+    min_split_gain: 0.1
+    random_state: 42
+    verbose: -1

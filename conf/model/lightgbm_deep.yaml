@@ -1,0 +1,17 @@
+# @package _global_
+# LightGBM with deeper trees - better for complex patterns
+
+model:
+  name: LightGBM
+  params:
+    n_estimators: 150
+    max_depth: 10
+    learning_rate: 0.03
+    num_leaves: 127
+    min_child_samples: 5
+    subsample: 0.9
+    colsample_bytree: 0.9
+    reg_alpha: 0.01
+    reg_lambda: 0.01
+    random_state: 42
+    verbose: -1
