@@ -21,7 +21,7 @@ def test_fast_dataloader_basic():
     print("="*80)
     
     # Import FastTensorDataLoader directly
-    from models.deep_learning import FastTensorDataLoader
+    from utils import FastTensorDataLoader
     
     # Create simple tensors
     X = torch.randn(100, 10)
