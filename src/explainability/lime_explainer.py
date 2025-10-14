@@ -61,7 +61,7 @@ class LIMEExplainer:
     def explain_instances(
         self,
         X_test: pd.DataFrame,
-        num_samples: int = 100,
+        num_samples: int = 200,
         num_features: int = 10
     ) -> List[Any]:
         """

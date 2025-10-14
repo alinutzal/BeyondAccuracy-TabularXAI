@@ -6,14 +6,16 @@ supports isotonic calibration on a holdout, and basic threshold selection helper
 from typing import Dict, Any, Optional
 import numpy as np
 import pandas as pd
+
 from sklearn.metrics import (
     average_precision_score,
     roc_auc_score,
     brier_score_loss,
     precision_recall_curve,
+    accuracy_score,
     precision_score,
     recall_score,
-    f1_score
+    f1_score,
 )
 from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import StratifiedKFold
@@ -112,16 +114,62 @@ def run_hash_timeish_split(X, y, model_factory, split_cols, threshold=0.5, eval_
 class Evaluator:
     def __init__(self, cfg: Optional[Dict[str, Any]] = None):
         cfg = cfg or {}
-        self.metrics = cfg.get('metrics', ['pr_auc', 'roc_auc', 'brier_score'])
-        self.monitor = cfg.get('monitor', 'pr_auc')
+        self.metrics = cfg.get('metrics', ['accuracy', 'precision', 'recall', 'f1', 'pr_auc', 'roc_auc', 'brier_score'])
+        self.monitor = cfg.get('monitor', 'accuracy')
         self.mode = cfg.get('mode', 'max')  # 'max' or 'min'
         self.patience = int(cfg.get('patience', 10))
         self.threshold_rule = cfg.get('threshold_rule', None)
 
-    def compute_metrics(self, y_true: np.ndarray, y_proba: np.ndarray) -> Dict[str, float]:
+    def compute_metrics(self, y_true: np.ndarray, y_proba: np.ndarray, y_pred: Optional[np.ndarray] = None) -> Dict[str, float]:
+        """Compute configured metrics.
+
+        y_proba: array-like of probabilities for the positive class (or hard labels if predict_proba not available)
+        y_pred: optional array-like of predicted class labels. When provided, label-based metrics
+                (accuracy, precision, recall, f1) will be computed from it. Otherwise they will
+                be computed by thresholding y_proba at 0.5.
+        """
         res = {}
         y_true = np.asarray(y_true)
         y_proba = np.asarray(y_proba)
+        y_pred_arr = None if y_pred is None else np.asarray(y_pred)
+
+        # for label-based metrics prefer y_pred when available, otherwise threshold probabilities
+        def get_pred_labels():
+            if y_pred_arr is not None:
+                return y_pred_arr
+            # threshold probabilities at 0.5
+            try:
+                return (y_proba >= 0.5).astype(int)
+            except Exception:
+                return None
+
+        if 'accuracy' in self.metrics:
+            try:
+                y_labels = get_pred_labels()
+                res['accuracy'] = float(accuracy_score(y_true, y_labels)) if y_labels is not None else None
+            except Exception:
+                res['accuracy'] = None
+
+        if 'precision' in self.metrics:
+            try:
+                y_labels = get_pred_labels()
+                res['precision'] = float(precision_score(y_true, y_labels)) if y_labels is not None else None
+            except Exception:
+                res['precision'] = None
+
+        if 'recall' in self.metrics:
+            try:
+                y_labels = get_pred_labels()
+                res['recall'] = float(recall_score(y_true, y_labels)) if y_labels is not None else None
+            except Exception:
+                res['recall'] = None
+
+        if 'f1' in self.metrics:
+            try:
+                y_labels = get_pred_labels()
+                res['f1'] = float(f1_score(y_true, y_labels)) if y_labels is not None else None
+            except Exception:
+                res['f1'] = None
 
         if 'pr_auc' in self.metrics:
             try:
@@ -171,12 +219,18 @@ class Evaluator:
         proba_transform: optional callable to map predicted probabilities (e.g., calibration)
         """
         # ask model for predict_proba; fall back to predict if not available
+        y_pred = None
         try:
             y_proba = model.predict_proba(X)
             # if model returns multi-class probabilities, pick positive class if binary
             if y_proba.ndim == 2 and y_proba.shape[1] > 1:
                 # assume binary positive is last column
                 y_proba = y_proba[:, 1]
+            # also try to get hard predictions if available
+            try:
+                y_pred = model.predict(X)
+            except Exception:
+                y_pred = None
         except Exception:
             # fallback to using predict and treating as hard labels
             try:
@@ -188,7 +242,7 @@ class Evaluator:
         if proba_transform is not None:
             y_proba = proba_transform(y_proba)
 
-        return self.compute_metrics(y, y_proba)
+        return self.compute_metrics(y, y_proba, y_pred=y_pred)
 
     def fit_isotonic(self, y_holdout: np.ndarray, proba_holdout: np.ndarray) -> IsotonicRegression:
         """Fit an isotonic regression mapping p -> calibrated_p on holdout probabilities."""

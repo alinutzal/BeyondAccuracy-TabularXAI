@@ -23,7 +23,7 @@ scheduler:
   min_lr: 0.0
 
 training:
-  batch_size: 32
+  batch_size: 1024
   epochs: 200
   early_stopping:
     enabled: true
@@ -35,6 +35,12 @@ random_seed: 42
 
 evaluation:
   type: 5fold_stratified_cv # hash_timeish_split
+
+distillation:
+  enabled: true
+  teacher_model_path: null
+  temperature: 2.0
+  alpha: 0.5
 
 notes: |
   Model uses GEGLU activations with LayerNorm in each block. Dropout=0.25,

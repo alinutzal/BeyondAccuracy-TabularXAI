@@ -314,10 +314,101 @@ class SHAPExplainer:
         else:
             shap_vals = self.shap_values
         
+        # Normalize shap_vals into an array shaped (n_samples, n_features).
+        def _normalize_shap(shap_vals, n_samples, n_features):
+            # If list, try to find an element that already matches (n_samples, n_features)
+            if isinstance(shap_vals, list):
+                for v in shap_vals:
+                    try:
+                        arr = np.asarray(v)
+                    except Exception:
+                        continue
+                    if arr.ndim == 2 and arr.shape[0] == n_samples and arr.shape[1] == n_features:
+                        return arr
+                # fallback to first element for normalization logic
+                try:
+                    arr = np.asarray(shap_vals[0])
+                except Exception:
+                    arr = None
+            else:
+                try:
+                    arr = np.asarray(shap_vals)
+                except Exception:
+                    arr = None
+
+            if arr is None:
+                return np.zeros((n_samples, n_features))
+
+            # If 1D vector
+            if arr.ndim == 1:
+                if arr.size == n_features:
+                    return np.tile(arr.reshape(1, -1), (n_samples, 1))
+                if arr.size == n_samples:
+                    # single-column probabilities -> expand to features with zeros
+                    col = arr.reshape(-1, 1)
+                    if n_features == 1:
+                        return col
+                    pad = np.zeros((n_samples, n_features - 1))
+                    return np.concatenate([col, pad], axis=1)
+                # try to reshape if compatible
+                flat = arr.ravel()
+                if flat.size % n_features == 0:
+                    reshaped = flat.reshape(-1, n_features)
+                    if reshaped.shape[0] >= n_samples:
+                        return reshaped[:n_samples]
+                    reps = int(np.ceil(n_samples / float(reshaped.shape[0])))
+                    return np.tile(reshaped, (reps, 1))[:n_samples]
+                return np.zeros((n_samples, n_features))
+
+            # If 2D array
+            if arr.ndim == 2:
+                # common case: (n_samples, n_features)
+                if arr.shape[1] == n_features:
+                    if arr.shape[0] == n_samples:
+                        return arr
+                    if arr.shape[0] == 1:
+                        return np.tile(arr, (n_samples, 1))
+                    if arr.shape[0] < n_samples:
+                        reps = int(np.ceil(n_samples / float(arr.shape[0])))
+                        return np.tile(arr, (reps, 1))[:n_samples]
+                    return arr[:n_samples]
+
+                # transposed case: (n_features, n_samples)
+                if arr.shape[0] == n_features and arr.shape[1] == n_samples:
+                    t = arr.T
+                    if t.shape[0] == n_samples:
+                        return t
+
+                # if last axis matches n_features, average across other axes and align
+                if arr.shape[-1] == n_features:
+                    # collapse all leading axes into samples axis
+                    leading = int(np.prod(arr.shape[:-1]))
+                    reshaped = arr.reshape(leading, n_features)
+                    if reshaped.shape[0] >= n_samples:
+                        return reshaped[:n_samples]
+                    reps = int(np.ceil(n_samples / float(reshaped.shape[0])))
+                    return np.tile(reshaped, (reps, 1))[:n_samples]
+
+                # fallback: try to flatten and repartition
+                flat = arr.ravel()
+                if flat.size % n_features == 0:
+                    reshaped = flat.reshape(-1, n_features)
+                    if reshaped.shape[0] >= n_samples:
+                        return reshaped[:n_samples]
+                    reps = int(np.ceil(n_samples / float(reshaped.shape[0])))
+                    return np.tile(reshaped, (reps, 1))[:n_samples]
+
+            # Any other ndim: fallback
+            return np.zeros((n_samples, n_features))
+
+        n_samples = len(X_test)
+        n_features = X_test.shape[1]
+        use_shap = _normalize_shap(shap_vals, n_samples, n_features)
+
         # Create dependence plot
         shap.dependence_plot(
             feature,
-            shap_vals,
+            use_shap,
             X_test,
             interaction_index=interaction_index,
             show=False

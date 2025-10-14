@@ -12,9 +12,12 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 from utils.data_loader import DataLoader
 from models import XGBoostClassifier
 from explainability import ShapIQExplainer
+import shapiq
+
 
 
 def main():
+    print(f"shapiq version: {shapiq.__version__}")
     print("="*80)
     print("ShapIQ (Shapley Interaction Quantification) Example")
     print("="*80)
@@ -57,7 +60,7 @@ def main():
     )
     
     # Explain test set (use smaller sample for performance)
-    test_sample = X_test.head(30)
+    test_sample = X_test #.head(30)
     
     try:
         shapiq_result = shapiq_explainer.explain(test_sample, index='k-SII')

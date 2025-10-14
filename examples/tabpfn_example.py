@@ -58,7 +58,7 @@ def main():
     
     # Train model
     print("\nTraining TabPFN model...")
-    model = TabPFNClassifier(device='cpu', N_ensemble_configurations=32)
+    model = TabPFNClassifier(device='cuda', N_ensemble_configurations=32)
     model.train(X_train, y_train)
     print("✓ Model trained successfully!")
     

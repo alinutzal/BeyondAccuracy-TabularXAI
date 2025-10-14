@@ -184,7 +184,7 @@ class MLPClassifier:
         self.scheduler_cfg = scheduler or {'name': None}
         self.swa_cfg = swa or {'enabled': False}
         training = training or {}
-        self.batch_size = int(training.get('batch_size', 32))
+        self.batch_size = int(training.get('batch_size', 1024))
         self.epochs = int(training.get('epochs', 100))
         self.early_stopping = training.get('early_stopping', {'enabled': False})
         self.auto_device = bool(training.get('auto_device', True))
@@ -195,11 +195,8 @@ class MLPClassifier:
         # Distillation configuration
         self.distillation = distillation or {'enabled': False}
 
-        # device selection
-        if device:
-            self.device = device
-        else:
-            self.device = 'cuda' if torch.cuda.is_available() and self.auto_device else 'cpu'
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        print(self.device)
 
         self.model = None
         self.model_name = "MLP"
@@ -584,7 +581,7 @@ class TransformerClassifier:
         distillation: Optional[Dict[str, Any]] = None,
         # Legacy parameters for backward compatibility
         learning_rate: float = 0.001,
-        batch_size: int = 32,
+        batch_size: int = 1024,
         epochs: int = 100,
         gaussian_noise_sigma: float = 0.0,
         **kwargs
@@ -631,10 +628,8 @@ class TransformerClassifier:
         self.distillation = distillation or {'enabled': False}
         
         # Device selection
-        if device:
-            self.device = device
-        else:
-            self.device = 'cuda' if torch.cuda.is_available() and self.auto_device else 'cpu'
+
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
         self.model = None
         self.model_name = "Transformer"

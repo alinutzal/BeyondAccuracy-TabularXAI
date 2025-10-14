@@ -144,7 +144,19 @@ class LightGBMClassifier:
         
         # Add AUC-ROC for binary classification
         if len(np.unique(y_test)) == 2:
-            metrics['roc_auc'] = roc_auc_score(y_test, y_proba[:, 1])
+            try:
+                probs = y_proba[:, 1] if (hasattr(y_proba, 'ndim') and y_proba.ndim == 2 and y_proba.shape[1] > 1) else y_proba
+                metrics['roc_auc'] = roc_auc_score(y_test, probs)
+            except Exception:
+                metrics['roc_auc'] = None
+            try:
+                metrics['pr_auc'] = average_precision_score(y_test, probs)
+            except Exception:
+                metrics['pr_auc'] = None
+            try:
+                metrics['brier_score'] = brier_score_loss(y_test, probs)
+            except Exception:
+                metrics['brier_score'] = None
         else:
             try:
                 metrics['roc_auc'] = roc_auc_score(y_test, y_proba, multi_class='ovr', average='weighted')

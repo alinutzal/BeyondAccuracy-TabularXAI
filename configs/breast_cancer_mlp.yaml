@@ -31,7 +31,7 @@ scheduler:
   min_lr: 0.0
 
 training:
-  batch_size: 32
+  batch_size: 128
   epochs: 300
   early_stopping:
     enabled: true

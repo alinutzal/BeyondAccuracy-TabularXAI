@@ -318,7 +318,7 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
                 safe_feature_name = feature.replace(' ', '_').replace('/', '_')
                 shap_explainer.plot_dependence(
                     feature,
-                    X_test.head(100),
+                    X_test.head(200),
                     save_path=os.path.join(experiment_dir, f'shap_dependence_{safe_feature_name}.png')
                 )
             print(f"Generated SHAP dependence plots for top {len(top_features)} features")
@@ -327,7 +327,7 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
         
         # Get SHAP explanations for metrics
         shap_explanations = []
-        for i in range(min(50, len(X_test))):
+        for i in range(min(200, len(X_test))):
             try:
                 exp = shap_explainer.explain_instance(X_test.iloc[i])
                 shap_explanations.append(exp)
@@ -347,18 +347,18 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
     print("\nGenerating LIME explanations...")
     try:
         lime_explainer = LIMEExplainer(model, X_train, X_train.columns.tolist())
-        lime_importance = lime_explainer.get_feature_importance(X_test, num_samples=50)
+        lime_importance = lime_explainer.get_feature_importance(X_test, num_samples=200)
         
         # Save LIME plots
         try:
-            lime_explainer.plot_feature_importance(X_test, num_samples=50,
+            lime_explainer.plot_feature_importance(X_test, num_samples=200,
                                                   save_path=os.path.join(experiment_dir, 'lime_importance.png'))
         except Exception as plot_err:
             print(f"Warning: LIME plot failed: {plot_err}")
         
         # Get LIME explanations for metrics
         lime_explanations = []
-        for i in range(min(50, len(X_test))):
+        for i in range(min(200, len(X_test))):
             try:
                 exp = lime_explainer.explain_instance(X_test.iloc[i].values, num_features=10)
                 try:
@@ -475,11 +475,10 @@ def run_all_experiments(results_dir: str = '../results', rerun: bool = False):
         results_dir: Directory to save results
         rerun: If False and results already exist, skip the experiment. If True, rerun regardless.
     """
-    datasets = ['breast_cancer', 'adult_income', 'bank_marketing']
-    models = ['XGBoost', 'LightGBM', 'MLP', 'Transformer', 'TabPFN']
-    
+    datasets = ['breast_cancer', 'diabetes', 'adult_income', 'bank_marketing', 'credit_card_fraud', 'in-vehicle_coupon']
+    models = ['XGBoost', 'LightGBM', 'MLP', 'Transformer'] #, 'TabPFN'
+     
     all_results = []
-    
     for dataset in datasets:
         for model in models:
             try:

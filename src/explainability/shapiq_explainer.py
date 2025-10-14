@@ -116,7 +116,25 @@ class ShapIQExplainer:
         try:
             # Compute interactions using shapiq
             X_values = X_test.values if hasattr(X_test, 'values') else X_test
-            interactions = self.explainer.explain(X_values)
+            try:
+                interactions = self.explainer.explain(X_values)
+            except TypeError as te:
+                # Some shapiq versions or explainer wrappers require a 'budget' kwarg.
+                msg = str(te)
+                if 'budget' in msg or 'missing' in msg:
+                    # choose a reasonable default budget: number of samples clipped to [1, 1000]
+                    n_samples = X_values.shape[0] if hasattr(X_values, 'shape') else len(X_values)
+                    default_budget = int(max(1, min(1000, n_samples)))
+                    try:
+                        print(f"Warning: shapiq explainer requires 'budget' argument, retrying with budget={default_budget}")
+                        interactions = self.explainer.explain(X_values[:default_budget], budget=default_budget)
+                    except Exception as e2:
+                        print(f"Warning: Error computing shapiq interactions with budget: {e2}")
+                        return self._approximate_interactions(X_test)
+                else:
+                    # re-raise to be handled by outer except
+                    raise
+
             return interactions
         except Exception as e:
             print(f"Warning: Error computing shapiq interactions: {e}")
