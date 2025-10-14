@@ -1,0 +1,13 @@
+# @package _global_
+# GradientBoostingClassifier with shallow trees
+
+model:
+  name: GradientBoosting
+  params:
+    n_estimators: 200
+    max_depth: 2
+    learning_rate: 0.05
+    min_samples_split: 10
+    min_samples_leaf: 5
+    subsample: 0.8
+    random_state: 42

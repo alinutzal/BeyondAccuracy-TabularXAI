@@ -1,0 +1,10 @@
+# @package _global_
+# Default Sklearn GradientBoostingClassifier configuration
+
+model:
+  name: GradientBoosting
+  params:
+    n_estimators: 100
+    max_depth: 3
+    learning_rate: 0.1
+    random_state: 42

@@ -1,0 +1,21 @@
+# Main Hydra configuration file
+# This file defines the default configuration and where to find other config groups
+
+defaults:
+  - model: xgboost_default
+  - _self_
+
+# Dataset configuration
+dataset:
+  name: breast_cancer
+  test_size: 0.2
+  random_state: 42
+  scale_features: true
+
+# Experiment settings
+experiment:
+  results_dir: ../results
+  rerun: false
+
+# Random seed for reproducibility
+seed: 42
