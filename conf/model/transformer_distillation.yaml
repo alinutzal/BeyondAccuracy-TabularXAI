@@ -1,0 +1,50 @@
+# @package _global_
+# Transformer with knowledge distillation enabled by default
+
+model:
+  name: Transformer_Distillation
+  params:
+    d_model: 64
+    nhead: 4
+    num_layers: 2
+    dim_feedforward: 128
+    dropout: 0.3
+    weight_decay: 1e-4
+    
+    mixup:
+      enabled: false
+      alpha: 0.0
+    
+    gaussian_noise:
+      enabled: false
+    
+    label_smoothing: 0.0
+    
+    optimizer:
+      name: Adam
+      lr: 0.001
+      betas: [0.9, 0.999]
+      eps: 1e-8
+    
+    scheduler:
+      name: null
+    
+    swa:
+      enabled: false
+    
+    # Distillation configuration (enabled by default for this model)
+    distillation:
+      enabled: true
+      lambda: 0.7  # Weight for distillation loss (0.7 = 70% teacher, 30% ground truth)
+      temperature: 2.0  # Temperature for soft targets
+    
+    training:
+      batch_size: 128
+      epochs: 100
+      early_stopping:
+        enabled: true
+        monitor: val_loss
+        patience: 10
+      auto_device: true
+    
+    random_seed: 42

@@ -2,6 +2,15 @@
 
 This guide shows how to use Hydra configuration management for deep learning experiments (MLP and Transformer models).
 
+## Model Variants
+
+The repository now provides **4 distinct deep learning model types**:
+
+1. **MLP** - Multi-Layer Perceptron without distillation
+2. **Transformer** - Transformer-based model without distillation
+3. **MLP_Distillation** - MLP with knowledge distillation from a teacher model
+4. **Transformer_Distillation** - Transformer with knowledge distillation from a teacher model
+
 ## Available Configurations
 
 ### MLP (Multi-Layer Perceptron)
@@ -11,6 +20,7 @@ This guide shows how to use Hydra configuration management for deep learning exp
 - Activation: ReLU
 - Batch size: 128
 - Epochs: 100
+- Distillation: Disabled
 - Best for: General-purpose experiments
 
 **Small Configuration** (`mlp_small.yaml`)
@@ -19,6 +29,7 @@ This guide shows how to use Hydra configuration management for deep learning exp
 - Batch size: 128
 - Epochs: 200
 - Features: Gaussian noise, cosine scheduler, SWA
+- Distillation: Disabled
 - Best for: Small datasets (< 1000 samples)
 
 **Large Configuration** (`mlp_large.yaml`)
@@ -27,7 +38,16 @@ This guide shows how to use Hydra configuration management for deep learning exp
 - Batch size: 1024
 - Epochs: 200
 - Features: MixUp augmentation, label smoothing
+- Distillation: Disabled
 - Best for: Large datasets (> 10,000 samples)
+
+**Distillation Configuration** (`mlp_distillation.yaml`) **[NEW]**
+- Hidden layers: [128, 64, 32]
+- Activation: ReLU
+- Batch size: 128
+- Epochs: 100
+- **Distillation: Enabled (λ=0.7, temperature=2.0)**
+- Best for: Learning from a teacher model (e.g., XGBoost)
 
 ### Transformer
 
@@ -35,6 +55,7 @@ This guide shows how to use Hydra configuration management for deep learning exp
 - d_model: 64, heads: 4, layers: 2
 - Batch size: 128
 - Epochs: 100
+- Distillation: Disabled
 - Best for: General-purpose experiments
 
 **Small Configuration** (`transformer_small.yaml`)
@@ -42,6 +63,7 @@ This guide shows how to use Hydra configuration management for deep learning exp
 - Batch size: 128
 - Epochs: 300
 - Features: Gaussian noise, cosine scheduler, SWA
+- Distillation: Disabled
 - Best for: Small datasets
 
 **Large Configuration** (`transformer_large.yaml`)
@@ -49,7 +71,15 @@ This guide shows how to use Hydra configuration management for deep learning exp
 - Batch size: 1024
 - Epochs: 300
 - Features: MixUp augmentation, SWA
+- Distillation: Disabled
 - Best for: Large datasets
+
+**Distillation Configuration** (`transformer_distillation.yaml`) **[NEW]**
+- d_model: 64, heads: 4, layers: 2
+- Batch size: 128
+- Epochs: 100
+- **Distillation: Enabled (λ=0.7, temperature=2.0)**
+- Best for: Learning from a teacher model (e.g., XGBoost)
 
 ## Usage Examples
 
@@ -80,6 +110,12 @@ python run_experiments_hydra.py model=transformer_small
 
 # Large Transformer
 python run_experiments_hydra.py model=transformer_large
+
+# MLP with knowledge distillation (NEW)
+python run_experiments_hydra.py model=mlp_distillation
+
+# Transformer with knowledge distillation (NEW)
+python run_experiments_hydra.py model=transformer_distillation
 ```
 
 ### Change Dataset
@@ -205,13 +241,50 @@ python run_experiments_hydra.py model=mlp_default \
   model.params.mixup.enabled=true
 ```
 
+## Knowledge Distillation
+
+Knowledge distillation allows neural networks to learn from a "teacher" model (e.g., XGBoost) by using its soft predictions as additional training signal.
+
+### Using Distillation Models
+
+```bash
+# Train with MLP distillation (requires teacher model predictions)
+python run_experiments_hydra.py model=mlp_distillation
+
+# Train with Transformer distillation
+python run_experiments_hydra.py model=transformer_distillation
+```
+
+### Customizing Distillation Parameters
+
+```bash
+# Adjust distillation weight (lambda)
+python run_experiments_hydra.py model=mlp_distillation \
+  model.params.distillation.lambda=0.5  # 50% teacher, 50% ground truth
+
+# Adjust temperature
+python run_experiments_hydra.py model=mlp_distillation \
+  model.params.distillation.temperature=3.0  # Softer predictions
+```
+
+### When to Use Distillation
+
+- **Use `mlp_distillation` or `transformer_distillation` when**:
+  - You have a well-trained teacher model (e.g., XGBoost)
+  - You want to compress knowledge into a neural network
+  - You need faster inference than the teacher model
+  
+- **Use regular `mlp_default` or `transformer_default` when**:
+  - Training from scratch without a teacher
+  - You don't have teacher model predictions
+
 ## Configuration Structure
 
 All deep learning model configurations follow this structure:
 
 ```yaml
 model:
-  name: MLP  # or Transformer
+  name: MLP  # or Transformer, MLP_Distillation, Transformer_Distillation
   params:
     # Architecture parameters
     hidden_dims: [128, 64, 32]  # for MLP
@@ -231,6 +304,12 @@ model:
     
     gaussian_noise:
       enabled: false
+    
+    # Knowledge distillation (for distillation models)
+    distillation:
+      enabled: true  # Only in *_distillation configs
+      lambda: 0.7    # Weight for distillation loss
+      temperature: 2.0  # Temperature for soft targets
     
     # Training parameters
     optimizer:

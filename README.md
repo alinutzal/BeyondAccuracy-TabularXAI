@@ -6,7 +6,7 @@ Beyond Accuracy: A Comprehensive Comparative Study of Gradient Boosting and Expl
 
 This repository contains a complete implementation to reproduce and extend experiments comparing gradient boosting methods, deep learning models, and explainability techniques on tabular datasets. The project implements:
 
-- **4 Gradient Boosting & Deep Learning Models**: XGBoost, LightGBM, TabPFN, and Transformer-based architectures
+- **7 Machine Learning Models**: XGBoost, LightGBM, Gradient Boosting, TabPFN, MLP, Transformer, plus knowledge distillation variants
 - **3 Diverse Tabular Datasets**: Breast Cancer, Adult Income, and Bank Marketing
 - **2 Explainability Methods**: SHAP and LIME
 - **Rigorous Interpretability Metrics**: Feature importance stability, explanation consistency, feature agreement, explanation fidelity, and complexity
@@ -46,13 +46,21 @@ BeyondAccuracy-TabularXAI/
 
 ### Models
 
+#### Tree-Based Models
 1. **XGBoost**: Industry-standard gradient boosting with tree-based learning
 2. **LightGBM**: Efficient gradient boosting with histogram-based learning
-3. **TabPFN**: Prior-Fitted Networks - transformer-based model with in-context learning for small tabular datasets
-4. **Transformer**: Attention-based deep learning architecture for tabular data
-5. **MLP with PyTorch Lightning**: Modern deep learning with Lightning's advanced features (optional)
+3. **Gradient Boosting**: Sklearn's gradient boosting implementation
+4. **TabPFN**: Prior-Fitted Networks - transformer-based model with in-context learning for small tabular datasets
 
-**Note**: Deep learning models (MLP, Transformer, TabPFN) now support PyTorch Lightning for cleaner code and advanced features. TabPFN also includes Hydra configuration support. See `readmd/PYTORCH_LIGHTNING_IMPLEMENTATION.md` and `readmd/TABPFN_LIGHTNING_HYDRA.md` for details.
+#### Deep Learning Models (4 Variants)
+5. **MLPClassifier**: Multi-Layer Perceptron without distillation
+6. **TransformerClassifier**: Attention-based architecture without distillation
+7. **MLPDistillationClassifier**: MLP with knowledge distillation from teacher models (NEW)
+8. **TransformerDistillationClassifier**: Transformer with knowledge distillation from teacher models (NEW)
+
+**Note**: 
+- Deep learning models support PyTorch Lightning for cleaner code and advanced features. See `readmd/PYTORCH_LIGHTNING_IMPLEMENTATION.md` for details.
+- See `DEEP_LEARNING_SEPARATION.md` for details on the 4 deep learning variants.
 
 ### Datasets
 
