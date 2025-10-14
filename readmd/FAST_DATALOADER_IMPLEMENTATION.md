@@ -6,7 +6,7 @@ Successfully replaced PyTorch's `DataLoader` and `TensorDataset` with a faster c
 ## Changes Made
 
 ### 1. Added FastTensorDataLoader Class
-- Location: `src/models/deep_learning.py` (lines 15-68)
+- Location: `src/utils/fast_dataloader.py` (moved from `src/models/deep_learning.py`)
 - A custom DataLoader implementation that is faster than the standard PyTorch DataLoader
 - Supports:
   - Variable number of tensors (2 or 3 tensors for regular training and distillation)
