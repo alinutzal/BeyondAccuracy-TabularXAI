@@ -1,0 +1,15 @@
+# @package _global_
+# Accurate TabPFN configuration - optimized for best performance
+# Use this when accuracy is more important than inference speed
+
+model:
+  name: TabPFN
+  params:
+    # Device to run on
+    device: cuda
+    
+    # More ensemble configurations for better accuracy
+    N_ensemble_configurations: 64
+    
+    # Random seed for reproducibility
+    random_state: 42
