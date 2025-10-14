@@ -50,6 +50,9 @@ BeyondAccuracy-TabularXAI/
 2. **LightGBM**: Efficient gradient boosting with histogram-based learning
 3. **TabPFN**: Prior-Fitted Networks - transformer-based model with in-context learning for small tabular datasets
 4. **Transformer**: Attention-based deep learning architecture for tabular data
+5. **MLP with PyTorch Lightning**: Modern deep learning with Lightning's advanced features (optional)
+
+**Note**: Deep learning models now support PyTorch Lightning for cleaner code and advanced features. See `readmd/PYTORCH_LIGHTNING_IMPLEMENTATION.md` for details.
 
 ### Datasets
 

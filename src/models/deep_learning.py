@@ -1,5 +1,5 @@
 """
-Deep Learning model implementations using PyTorch for tabular data.
+Deep Learning model implementations using PyTorch and PyTorch Lightning for tabular data.
 Includes TabNet and simple MLP architectures.
 """
 
@@ -8,13 +8,23 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, average_precision_score, brier_score_loss
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 from src.models.kd import compute_distillation_loss, compute_consistency_penalty, should_enable_distillation, get_distillation_params
+
+# PyTorch Lightning imports
+try:
+    import lightning as L
+    from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+    from lightning.pytorch.loggers import CSVLogger
+    LIGHTNING_AVAILABLE = True
+except ImportError:
+    LIGHTNING_AVAILABLE = False
+    print("Warning: PyTorch Lightning not available. Falling back to standard PyTorch training.")
 
 
 class FastTensorDataLoader:
@@ -111,6 +121,312 @@ class GEGLU(nn.Module):
         return nn.functional.gelu(a) * b
 
 
+if LIGHTNING_AVAILABLE:
+    class MLPLightningModule(L.LightningModule):
+        """
+        PyTorch Lightning wrapper for MLP tabular classifier.
+        """
+        def __init__(
+            self,
+            model: nn.Module,
+            criterion: nn.Module,
+            optimizer_cfg: Dict[str, Any],
+            scheduler_cfg: Optional[Dict[str, Any]] = None,
+            weight_decay: float = 0.0,
+            mixup_cfg: Optional[Dict[str, Any]] = None,
+            gaussian_noise_sigma: float = 0.0,
+            distillation_cfg: Optional[Dict[str, Any]] = None,
+            total_steps: int = 1000
+        ):
+            super().__init__()
+            self.model = model
+            self.criterion = criterion
+            self.optimizer_cfg = optimizer_cfg
+            self.scheduler_cfg = scheduler_cfg or {}  # Ensure it's always a dict
+            self.weight_decay = weight_decay
+            self.mixup_cfg = mixup_cfg or {'enabled': False}
+            self.gaussian_noise_sigma = gaussian_noise_sigma
+            self.distillation_cfg = distillation_cfg or {'enabled': False}
+            self.total_steps = total_steps
+            
+            # Get distillation parameters
+            self.distill_enabled = self.distillation_cfg.get('enabled', False)
+            if self.distill_enabled:
+                from kd import get_distillation_params
+                self.distill_lambda, self.distill_temperature, self.consistency_penalty_cfg = get_distillation_params(
+                    self.distillation_cfg, self.distill_enabled
+                )
+            
+        def forward(self, x):
+            return self.model(x)
+        
+        def training_step(self, batch: Tuple, batch_idx: int):
+            """Training step with support for mixup, distillation, and consistency penalty."""
+            if self.distill_enabled and len(batch) == 3:
+                batch_X, batch_y, batch_teacher_probs = batch
+            else:
+                batch_X, batch_y = batch
+                batch_teacher_probs = None
+            
+            # Training-only Gaussian noise augmentation
+            if self.gaussian_noise_sigma > 0 and self.training:
+                noise = torch.randn_like(batch_X) * self.gaussian_noise_sigma
+                batch_X = batch_X + noise
+            
+            # MixUp augmentation (mutually exclusive with distillation)
+            if self.mixup_cfg.get('enabled', False) and not self.distill_enabled:
+                alpha = float(self.mixup_cfg.get('alpha', 0.2))
+                lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0
+                idx = torch.randperm(batch_X.size(0), device=batch_X.device)
+                mixed_X = lam * batch_X + (1 - lam) * batch_X[idx]
+                targets_a, targets_b = batch_y, batch_y[idx]
+                outputs = self(mixed_X)
+                loss = lam * self.criterion(outputs, targets_a) + (1 - lam) * self.criterion(outputs, targets_b)
+            else:
+                # For consistency penalty, we need gradients w.r.t. inputs
+                if self.distill_enabled and self.consistency_penalty_cfg.get('enabled', False):
+                    batch_X.requires_grad_(True)
+                
+                outputs = self(batch_X)
+                
+                if self.distill_enabled and batch_teacher_probs is not None:
+                    # Compute distillation loss
+                    loss = compute_distillation_loss(
+                        student_logits=outputs,
+                        teacher_logits=batch_teacher_probs,
+                        labels=batch_y,
+                        criterion=self.criterion,
+                        temperature=self.distill_temperature,
+                        alpha=self.distill_lambda
+                    )
+                    
+                    # Optional consistency penalty
+                    if self.consistency_penalty_cfg.get('enabled', False):
+                        top_k_features = self.consistency_penalty_cfg.get('top_k_features', None)
+                        consistency_weight = float(self.consistency_penalty_cfg.get('weight', 0.01))
+                        if top_k_features is not None and len(top_k_features) > 0:
+                            jacobian_penalty = compute_consistency_penalty(
+                                student_logits=outputs,
+                                inputs=batch_X,
+                                top_k_features=top_k_features,
+                                device=self.device
+                            )
+                            loss = loss - consistency_weight * jacobian_penalty
+                else:
+                    loss = self.criterion(outputs, batch_y)
+            
+            self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+            return loss
+        
+        def validation_step(self, batch: Tuple, batch_idx: int):
+            """Validation step."""
+            if len(batch) == 3:
+                batch_X, batch_y, _ = batch  # Ignore teacher probs in validation
+            else:
+                batch_X, batch_y = batch
+            
+            outputs = self(batch_X)
+            loss = self.criterion(outputs, batch_y)
+            
+            # Calculate accuracy
+            preds = torch.argmax(outputs, dim=1)
+            acc = (preds == batch_y).float().mean()
+            
+            self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+            self.log('val_acc', acc, on_step=False, on_epoch=True, prog_bar=True)
+            return loss
+        
+        def configure_optimizers(self):
+            """Configure optimizer and learning rate scheduler."""
+            opt_name = str(self.optimizer_cfg.get('name', 'Adam'))
+            lr = float(self.optimizer_cfg.get('lr', 1e-3))
+            betas = tuple(self.optimizer_cfg.get('betas', (0.9, 0.999)))
+            eps = float(self.optimizer_cfg.get('eps', 1e-8))
+            
+            if opt_name.lower() in ['adamw', 'adam_w', 'adam-w']:
+                optimizer = optim.AdamW(self.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=self.weight_decay)
+            else:
+                optimizer = optim.Adam(self.parameters(), lr=lr, betas=betas, eps=eps)
+            
+            # Scheduler configuration
+            if self.scheduler_cfg and str(self.scheduler_cfg.get('name', '')).lower() == 'cosine':
+                warmup_prop = float(self.scheduler_cfg.get('warmup_proportion', 0.0))
+                warmup_steps = int(self.total_steps * warmup_prop)
+                min_lr = float(self.scheduler_cfg.get('min_lr', 0.0))
+                
+                def lr_lambda(current_step: int):
+                    if current_step < warmup_steps and warmup_steps > 0:
+                        return float(current_step) / float(max(1, warmup_steps))
+                    # Cosine decay after warmup
+                    progress = float(current_step - warmup_steps) / float(max(1, self.total_steps - warmup_steps))
+                    cosine_decay = 0.5 * (1.0 + np.cos(np.pi * progress))
+                    return max(min_lr / lr, float(cosine_decay))
+                
+                scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+                return {
+                    'optimizer': optimizer,
+                    'lr_scheduler': {
+                        'scheduler': scheduler,
+                        'interval': 'step',
+                    }
+                }
+            
+            return optimizer
+
+
+    class TransformerLightningModule(L.LightningModule):
+        """
+        PyTorch Lightning wrapper for Transformer tabular classifier.
+        """
+        def __init__(
+            self,
+            model: nn.Module,
+            criterion: nn.Module,
+            optimizer_cfg: Dict[str, Any],
+            scheduler_cfg: Optional[Dict[str, Any]] = None,
+            weight_decay: float = 0.0,
+            mixup_cfg: Optional[Dict[str, Any]] = None,
+            gaussian_noise_cfg: Optional[Dict[str, Any]] = None,
+            distillation_cfg: Optional[Dict[str, Any]] = None,
+            total_steps: int = 1000
+        ):
+            super().__init__()
+            self.model = model
+            self.criterion = criterion
+            self.optimizer_cfg = optimizer_cfg
+            self.scheduler_cfg = scheduler_cfg or {}  # Ensure it's always a dict
+            self.weight_decay = weight_decay
+            self.mixup_cfg = mixup_cfg or {'enabled': False}
+            self.gaussian_noise_cfg = gaussian_noise_cfg or {'enabled': False}
+            self.distillation_cfg = distillation_cfg or {'enabled': False}
+            self.total_steps = total_steps
+            
+            # Get distillation parameters
+            self.distill_enabled = self.distillation_cfg.get('enabled', False)
+            if self.distill_enabled:
+                from kd import get_distillation_params
+                self.distill_lambda, self.distill_temperature, self.consistency_penalty_cfg = get_distillation_params(
+                    self.distillation_cfg, self.distill_enabled
+                )
+            
+        def forward(self, x):
+            return self.model(x)
+        
+        def training_step(self, batch: Tuple, batch_idx: int):
+            """Training step with support for mixup, distillation, and Gaussian noise."""
+            if self.distill_enabled and len(batch) == 3:
+                batch_X, batch_y, batch_teacher_probs = batch
+            else:
+                batch_X, batch_y = batch
+                batch_teacher_probs = None
+            
+            # Gaussian noise augmentation
+            if self.gaussian_noise_cfg.get('enabled', False) and self.training:
+                std = float(self.gaussian_noise_cfg.get('std', 0.05))
+                noise = torch.randn_like(batch_X) * std
+                batch_X = batch_X + noise
+            
+            # MixUp augmentation (mutually exclusive with distillation)
+            if self.mixup_cfg.get('enabled', False) and not self.distill_enabled:
+                alpha = float(self.mixup_cfg.get('alpha', 0.2))
+                lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0
+                idx = torch.randperm(batch_X.size(0), device=batch_X.device)
+                mixed_X = lam * batch_X + (1 - lam) * batch_X[idx]
+                targets_a, targets_b = batch_y, batch_y[idx]
+                outputs = self(mixed_X)
+                loss = lam * self.criterion(outputs, targets_a) + (1 - lam) * self.criterion(outputs, targets_b)
+            else:
+                # For consistency penalty, we need gradients w.r.t. inputs
+                if self.distill_enabled and self.consistency_penalty_cfg.get('enabled', False):
+                    batch_X.requires_grad_(True)
+                
+                outputs = self(batch_X)
+                
+                if self.distill_enabled and batch_teacher_probs is not None:
+                    # Compute distillation loss
+                    loss = compute_distillation_loss(
+                        student_logits=outputs,
+                        teacher_logits=batch_teacher_probs,
+                        labels=batch_y,
+                        criterion=self.criterion,
+                        temperature=self.distill_temperature,
+                        alpha=self.distill_lambda
+                    )
+                    
+                    # Optional consistency penalty
+                    if self.consistency_penalty_cfg.get('enabled', False):
+                        top_k_features = self.consistency_penalty_cfg.get('top_k_features', None)
+                        consistency_weight = float(self.consistency_penalty_cfg.get('weight', 0.01))
+                        if top_k_features is not None and len(top_k_features) > 0:
+                            jacobian_penalty = compute_consistency_penalty(
+                                student_logits=outputs,
+                                inputs=batch_X,
+                                top_k_features=top_k_features,
+                                device=self.device
+                            )
+                            loss = loss - consistency_weight * jacobian_penalty
+                else:
+                    loss = self.criterion(outputs, batch_y)
+            
+            self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+            return loss
+        
+        def validation_step(self, batch: Tuple, batch_idx: int):
+            """Validation step."""
+            if len(batch) == 3:
+                batch_X, batch_y, _ = batch  # Ignore teacher probs in validation
+            else:
+                batch_X, batch_y = batch
+            
+            outputs = self(batch_X)
+            loss = self.criterion(outputs, batch_y)
+            
+            # Calculate accuracy
+            preds = torch.argmax(outputs, dim=1)
+            acc = (preds == batch_y).float().mean()
+            
+            self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+            self.log('val_acc', acc, on_step=False, on_epoch=True, prog_bar=True)
+            return loss
+        
+        def configure_optimizers(self):
+            """Configure optimizer and learning rate scheduler."""
+            opt_name = str(self.optimizer_cfg.get('name', 'Adam'))
+            lr = float(self.optimizer_cfg.get('lr', 1e-3))
+            betas = tuple(self.optimizer_cfg.get('betas', (0.9, 0.999)))
+            eps = float(self.optimizer_cfg.get('eps', 1e-8))
+            
+            if opt_name.lower() in ['adamw', 'adam_w', 'adam-w']:
+                optimizer = optim.AdamW(self.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=self.weight_decay)
+            else:
+                optimizer = optim.Adam(self.parameters(), lr=lr, betas=betas, eps=eps)
+            
+            # Scheduler configuration
+            if self.scheduler_cfg and str(self.scheduler_cfg.get('name', '')).lower() == 'cosine':
+                warmup_prop = float(self.scheduler_cfg.get('warmup_proportion', 0.0))
+                warmup_steps = int(self.total_steps * warmup_prop)
+                min_lr = float(self.scheduler_cfg.get('min_lr', 0.0))
+                
+                def lr_lambda(current_step: int):
+                    if current_step < warmup_steps and warmup_steps > 0:
+                        return float(current_step) / float(max(1, warmup_steps))
+                    # Cosine decay after warmup
+                    progress = float(current_step - warmup_steps) / float(max(1, self.total_steps - warmup_steps))
+                    cosine_decay = 0.5 * (1.0 + np.cos(np.pi * progress))
+                    return max(min_lr / lr, float(cosine_decay))
+                
+                scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+                return {
+                    'optimizer': optimizer,
+                    'lr_scheduler': {
+                        'scheduler': scheduler,
+                        'interval': 'step',
+                    }
+                }
+            
+            return optimizer
+
+
 class MLPClassifier:
     """MLP classifier wrapper for tabular data.
 
@@ -152,6 +468,7 @@ class MLPClassifier:
         device: Optional[str] = None,
         gaussian_noise_sigma: float = 0.0,
         distillation: Optional[Dict[str, Any]] = None,
+        use_lightning: bool = False,
         **kwargs
     ):
         """
@@ -174,6 +491,7 @@ class MLPClassifier:
             training: Training configuration
             random_seed: Random seed for reproducibility
             device: Device to use ('cpu' or 'cuda')
+            use_lightning: If True, use PyTorch Lightning for training (default: False for backward compatibility)
         """
         self.hidden_dims = hidden_dims
         self.activation = activation.lower() if activation else 'relu'
@@ -199,6 +517,9 @@ class MLPClassifier:
         
         # Distillation configuration
         self.distillation = distillation or {'enabled': False}
+        
+        # PyTorch Lightning flag
+        self.use_lightning = use_lightning and LIGHTNING_AVAILABLE
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print(self.device)
@@ -208,6 +529,7 @@ class MLPClassifier:
         self.input_dim = None
         self.output_dim = None
         self.swa_model = None
+        self.lightning_module = None
 
     def _to_numpy(self, X):
         """Convert input X to a numpy array.
@@ -232,6 +554,8 @@ class MLPClassifier:
         if self.random_seed is not None:
             np.random.seed(self.random_seed)
             torch.manual_seed(self.random_seed)
+            if LIGHTNING_AVAILABLE:
+                L.seed_everything(self.random_seed, workers=True)
 
         # Convert to numpy / tensors
         X_np = self._to_numpy(X_train)
@@ -256,6 +580,11 @@ class MLPClassifier:
                 dataloader = FastTensorDataLoader(X_tensor, y_tensor, batch_size=self.batch_size, shuffle=True)
         else:
             dataloader = FastTensorDataLoader(X_tensor, y_tensor, batch_size=self.batch_size, shuffle=True)
+        
+        # If using PyTorch Lightning, delegate to Lightning training
+        if self.use_lightning and LIGHTNING_AVAILABLE:
+            self._train_with_lightning(X_tensor, y_tensor, teacher_tensor if distill_enabled else None, dataloader)
+            return
         
         # Initialize model using configurable architecture
         self.input_dim = X_train.shape[1]
@@ -460,6 +789,118 @@ class MLPClassifier:
             except Exception as e:
                 print(f"Warning: SWA finalization failed: {e}, using non-SWA model")
     
+    def _train_with_lightning(self, X_tensor: torch.Tensor, y_tensor: torch.Tensor, 
+                             teacher_tensor: Optional[torch.Tensor], dataloader) -> None:
+        """Train model using PyTorch Lightning."""
+        # Initialize model using configurable architecture
+        self.input_dim = X_tensor.shape[1]
+        self.output_dim = int(len(torch.unique(y_tensor)))
+
+        # Build layers respecting activation and layer_norm_per_block
+        layers = []
+        prev = self.input_dim
+
+        # optional input (embedding) dropout
+        if self.embedding_dropout and self.embedding_dropout > 0:
+            layers.append(nn.Dropout(self.embedding_dropout))
+
+        for h in self.hidden_dims:
+            # If using GEGLU we need to double the linear width for gated proj
+            if self.activation == 'geglu':
+                layers.append(nn.Linear(prev, h * 2))
+                # BatchNorm takes precedence over LayerNorm if both are set
+                if self.batch_norm_per_block:
+                    layers.append(nn.BatchNorm1d(h * 2))
+                elif self.layer_norm_per_block:
+                    layers.append(nn.LayerNorm(h * 2))
+                layers.append(GEGLU())
+            else:
+                layers.append(nn.Linear(prev, h))
+                # BatchNorm takes precedence over LayerNorm if both are set
+                if self.batch_norm_per_block:
+                    layers.append(nn.BatchNorm1d(h))
+                elif self.layer_norm_per_block:
+                    layers.append(nn.LayerNorm(h))
+                
+                # Activation function selection
+                if self.activation == 'silu':
+                    layers.append(nn.SiLU())
+                else:  # default to relu
+                    layers.append(nn.ReLU())
+
+            layers.append(nn.Dropout(self.dropout))
+            prev = h
+
+        layers.append(nn.Linear(prev, self.output_dim))
+        model_net = nn.Sequential(*layers)
+        
+        # Loss function
+        if self.label_smoothing and self.label_smoothing > 0:
+            try:
+                criterion = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
+            except TypeError:
+                criterion = nn.CrossEntropyLoss()
+        else:
+            criterion = nn.CrossEntropyLoss()
+        
+        # Create Lightning module
+        total_steps = len(dataloader) * self.epochs
+        self.lightning_module = MLPLightningModule(
+            model=model_net,
+            criterion=criterion,
+            optimizer_cfg=self.optimizer_cfg,
+            scheduler_cfg=self.scheduler_cfg,
+            weight_decay=self.weight_decay,
+            mixup_cfg=self.mixup,
+            gaussian_noise_sigma=self.gaussian_noise_sigma,
+            distillation_cfg=self.distillation,
+            total_steps=total_steps
+        )
+        
+        # Setup callbacks
+        callbacks = []
+        
+        # Early stopping
+        if self.early_stopping.get('enabled', False):
+            monitor = self.early_stopping.get('monitor', 'val_loss')
+            patience = int(self.early_stopping.get('patience', 10))
+            callbacks.append(EarlyStopping(monitor=monitor, patience=patience, mode='min'))
+        
+        # Model checkpointing (optional)
+        # callbacks.append(ModelCheckpoint(monitor='val_loss', mode='min'))
+        
+        # Create Trainer
+        trainer = L.Trainer(
+            max_epochs=self.epochs,
+            callbacks=callbacks,
+            accelerator='auto',
+            devices=1,
+            logger=False,  # Disable logging for simplicity
+            enable_progress_bar=True,
+            enable_model_summary=False,
+            deterministic=self.random_seed is not None
+        )
+        
+        # Convert dataloader to Lightning-compatible format
+        # For Lightning, we need to create a proper DataLoader with the dataset
+        if teacher_tensor is not None:
+            train_dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor, teacher_tensor)
+        else:
+            train_dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
+        
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=0
+        )
+        
+        # Train the model
+        trainer.fit(self.lightning_module, train_loader)
+        
+        # Extract the trained model
+        self.model = self.lightning_module.model
+    
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Make predictions."""
         self.model.eval()
@@ -560,6 +1001,7 @@ class TransformerClassifier:
         random_seed: Optional[int] = None,
         device: Optional[str] = None,
         distillation: Optional[Dict[str, Any]] = None,
+        use_lightning: bool = False,
         # Legacy parameters for backward compatibility
         learning_rate: float = 0.001,
         batch_size: int = 1024,
@@ -586,6 +1028,7 @@ class TransformerClassifier:
             training: Training configuration
             random_seed: Random seed for reproducibility
             device: Device to use ('cpu' or 'cuda')
+            use_lightning: If True, use PyTorch Lightning for training (default: False for backward compatibility)
         """
         self.d_model = d_model
         self.nhead = nhead
@@ -608,6 +1051,9 @@ class TransformerClassifier:
         # Distillation configuration
         self.distillation = distillation or {'enabled': False}
         
+        # PyTorch Lightning flag
+        self.use_lightning = use_lightning and LIGHTNING_AVAILABLE
+        
         # Device selection
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -617,6 +1063,7 @@ class TransformerClassifier:
         self.input_dim = None
         self.output_dim = None
         self.swa_model = None
+        self.lightning_module = None
         # training-only Gaussian noise standard deviation. Applied per-batch during training.
         self.gaussian_noise_sigma = float(gaussian_noise_sigma or 0.0)
     
@@ -680,6 +1127,8 @@ class TransformerClassifier:
         if self.random_seed is not None:
             np.random.seed(self.random_seed)
             torch.manual_seed(self.random_seed)
+            if LIGHTNING_AVAILABLE:
+                L.seed_everything(self.random_seed, workers=True)
         
         # Convert to tensors
         X_np = self._to_numpy(X_train)
@@ -703,6 +1152,11 @@ class TransformerClassifier:
                 dataloader = FastTensorDataLoader(X_tensor, y_tensor, batch_size=self.batch_size, shuffle=True)
         else:
             dataloader = FastTensorDataLoader(X_tensor, y_tensor, batch_size=self.batch_size, shuffle=True)
+        
+        # If using PyTorch Lightning, delegate to Lightning training
+        if self.use_lightning and LIGHTNING_AVAILABLE:
+            self._train_with_lightning(X_train, X_tensor, y_tensor, teacher_tensor if distill_enabled else None, dataloader)
+            return
         
         # Initialize model
         self.input_dim = X_train.shape[1]
@@ -869,6 +1323,74 @@ class TransformerClassifier:
                 print("SWA model finalized and set as primary model")
             except Exception as e:
                 print(f"Warning: SWA finalization failed: {e}, using non-SWA model")
+    
+    def _train_with_lightning(self, X_train: pd.DataFrame, X_tensor: torch.Tensor, 
+                             y_tensor: torch.Tensor, teacher_tensor: Optional[torch.Tensor], 
+                             dataloader) -> None:
+        """Train model using PyTorch Lightning."""
+        # Initialize model
+        self.input_dim = X_train.shape[1]
+        self.output_dim = len(np.unique(y_tensor.numpy()))
+        model = self._build_model()
+        
+        # Loss with label smoothing support
+        if self.label_smoothing and self.label_smoothing > 0:
+            try:
+                criterion = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
+            except TypeError:
+                # Older PyTorch doesn't support label_smoothing arg
+                criterion = nn.CrossEntropyLoss()
+        else:
+            criterion = nn.CrossEntropyLoss()
+        
+        # Create Lightning module
+        total_steps = len(dataloader) * self.epochs
+        self.lightning_module = TransformerLightningModule(
+            model=model,
+            criterion=criterion,
+            optimizer_cfg=self.optimizer_cfg,
+            scheduler_cfg=self.scheduler_cfg,
+            weight_decay=self.weight_decay,
+            mixup_cfg=self.mixup,
+            gaussian_noise_cfg=self.gaussian_noise,
+            distillation_cfg=self.distillation,
+            total_steps=total_steps
+        )
+        
+        # Setup callbacks
+        callbacks = []
+        # Early stopping could be added here if needed
+        
+        # Create Trainer
+        trainer = L.Trainer(
+            max_epochs=self.epochs,
+            callbacks=callbacks,
+            accelerator='auto',
+            devices=1,
+            logger=False,  # Disable logging for simplicity
+            enable_progress_bar=True,
+            enable_model_summary=False,
+            deterministic=self.random_seed is not None
+        )
+        
+        # Convert dataloader to Lightning-compatible format
+        if teacher_tensor is not None:
+            train_dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor, teacher_tensor)
+        else:
+            train_dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
+        
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=0
+        )
+        
+        # Train the model
+        trainer.fit(self.lightning_module, train_loader)
+        
+        # Extract the trained model
+        self.model = self.lightning_module.model
 
     def _to_numpy(self, X):
         """Convert input X to a numpy array.

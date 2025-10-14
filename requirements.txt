@@ -11,6 +11,7 @@ tabpfn>=0.1.0
 # Deep Learning
 torch>=2.0.0
 torchvision>=0.15.0
+lightning>=2.0.0
 
 # Transformers for tabular data
 transformers>=4.30.0
