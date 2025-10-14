@@ -142,7 +142,7 @@ if LIGHTNING_AVAILABLE:
             self.model = model
             self.criterion = criterion
             self.optimizer_cfg = optimizer_cfg
-            self.scheduler_cfg = scheduler_cfg
+            self.scheduler_cfg = scheduler_cfg or {}  # Ensure it's always a dict
             self.weight_decay = weight_decay
             self.mixup_cfg = mixup_cfg or {'enabled': False}
             self.gaussian_noise_sigma = gaussian_noise_sigma
@@ -249,7 +249,7 @@ if LIGHTNING_AVAILABLE:
                 optimizer = optim.Adam(self.parameters(), lr=lr, betas=betas, eps=eps)
             
             # Scheduler configuration
-            if self.scheduler_cfg and self.scheduler_cfg.get('name', '').lower() == 'cosine':
+            if self.scheduler_cfg and str(self.scheduler_cfg.get('name', '')).lower() == 'cosine':
                 warmup_prop = float(self.scheduler_cfg.get('warmup_proportion', 0.0))
                 warmup_steps = int(self.total_steps * warmup_prop)
                 min_lr = float(self.scheduler_cfg.get('min_lr', 0.0))
@@ -294,7 +294,7 @@ if LIGHTNING_AVAILABLE:
             self.model = model
             self.criterion = criterion
             self.optimizer_cfg = optimizer_cfg
-            self.scheduler_cfg = scheduler_cfg
+            self.scheduler_cfg = scheduler_cfg or {}  # Ensure it's always a dict
             self.weight_decay = weight_decay
             self.mixup_cfg = mixup_cfg or {'enabled': False}
             self.gaussian_noise_cfg = gaussian_noise_cfg or {'enabled': False}
@@ -402,7 +402,7 @@ if LIGHTNING_AVAILABLE:
                 optimizer = optim.Adam(self.parameters(), lr=lr, betas=betas, eps=eps)
             
             # Scheduler configuration
-            if self.scheduler_cfg and self.scheduler_cfg.get('name', '').lower() == 'cosine':
+            if self.scheduler_cfg and str(self.scheduler_cfg.get('name', '')).lower() == 'cosine':
                 warmup_prop = float(self.scheduler_cfg.get('warmup_proportion', 0.0))
                 warmup_steps = int(self.total_steps * warmup_prop)
                 min_lr = float(self.scheduler_cfg.get('min_lr', 0.0))
