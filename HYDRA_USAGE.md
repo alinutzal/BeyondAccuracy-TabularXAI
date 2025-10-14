@@ -1,6 +1,6 @@
 # Using Hydra for Configuration Management
 
-This project now supports [Hydra](https://hydra.cc/) for flexible configuration management and parameter sweeps, particularly for gradient boosting models (XGBoost, LightGBM, and sklearn's GradientBoostingClassifier).
+This project now supports [Hydra](https://hydra.cc/) for flexible configuration management and parameter sweeps for all model types including gradient boosting models (XGBoost, LightGBM, GradientBoosting) and deep learning models (MLP, Transformer).
 
 ## Overview
 
@@ -66,6 +66,30 @@ python run_experiments_hydra.py model=gradient_boosting_shallow
 python run_experiments_hydra.py model=gradient_boosting_deep
 ```
 
+**MLP (Multi-Layer Perceptron) variants:**
+```bash
+# Default configuration
+python run_experiments_hydra.py model=mlp_default
+
+# Small architecture (for small datasets)
+python run_experiments_hydra.py model=mlp_small
+
+# Large architecture (for large datasets)
+python run_experiments_hydra.py model=mlp_large
+```
+
+**Transformer variants:**
+```bash
+# Default configuration
+python run_experiments_hydra.py model=transformer_default
+
+# Small architecture
+python run_experiments_hydra.py model=transformer_small
+
+# Large architecture
+python run_experiments_hydra.py model=transformer_large
+```
+
 ### Changing Datasets
 
 ```bash
@@ -103,7 +127,13 @@ conf/
     ├── lightgbm_regularized.yaml
     ├── gradient_boosting_default.yaml
     ├── gradient_boosting_shallow.yaml
-    └── gradient_boosting_deep.yaml
+    ├── gradient_boosting_deep.yaml
+    ├── mlp_default.yaml
+    ├── mlp_small.yaml
+    ├── mlp_large.yaml
+    ├── transformer_default.yaml
+    ├── transformer_small.yaml
+    └── transformer_large.yaml
 ```
 
 ### Main Configuration (config.yaml)
@@ -370,8 +400,31 @@ python run_experiments_hydra.py model=xgboost_adult_income dataset.name=adult_in
 ### Issue: Multirun creates too many experiments
 **Solution**: Limit the parameter combinations or run them in batches.
 
+## Deep Learning Models
+
+For detailed information on using deep learning models (MLP and Transformer) with Hydra, see the dedicated guide:
+
+**[Deep Learning Models with Hydra Guide](DEEP_LEARNING_HYDRA.md)**
+
+Quick examples:
+```bash
+# MLP models
+python run_experiments_hydra.py model=mlp_default dataset.name=breast_cancer
+python run_experiments_hydra.py model=mlp_large dataset.name=adult_income
+
+# Transformer models  
+python run_experiments_hydra.py model=transformer_default dataset.name=breast_cancer
+python run_experiments_hydra.py model=transformer_large dataset.name=adult_income
+
+# Override deep learning parameters
+python run_experiments_hydra.py model=mlp_default \
+  model.params.hidden_dims=[256,128,64] \
+  model.params.optimizer.lr=0.01
+```
+
 ## Further Reading
 
+- [Deep Learning Models with Hydra Guide](DEEP_LEARNING_HYDRA.md) - **NEW!**
 - [Hydra Documentation](https://hydra.cc/)
 - [OmegaConf Documentation](https://omegaconf.readthedocs.io/)
 - [Hydra Tutorials](https://hydra.cc/docs/tutorials/intro/)

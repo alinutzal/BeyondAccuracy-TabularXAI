@@ -23,6 +23,8 @@ That's it! This runs XGBoost with default settings on the breast_cancer dataset.
 ```bash
 python run_experiments_hydra.py model=xgboost_shallow     # Better interpretability
 python run_experiments_hydra.py model=lightgbm_deep       # Better accuracy
+python run_experiments_hydra.py model=mlp_default         # Deep learning MLP
+python run_experiments_hydra.py model=transformer_default # Deep learning Transformer
 ```
 
 ### Choose a different dataset:
