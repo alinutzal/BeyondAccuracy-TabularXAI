@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore')
 from utils.data_loader import DataLoader
 import torch
 import yaml
-from models import XGBoostClassifier, LightGBMClassifier, TabPFNClassifier, MLPClassifier, TransformerClassifier
+from models import XGBoostClassifier, LightGBMClassifier, GradientBoostingClassifier, TabPFNClassifier, MLPClassifier, TransformerClassifier
 from explainability import SHAPExplainer, LIMEExplainer
 from metrics import InterpretabilityMetrics
 from utils.eval import Evaluator
@@ -131,6 +131,11 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
         params.update(model_kwargs)
         model = LightGBMClassifier(**params)
         model_type = 'tree'
+    elif model_name == 'GradientBoosting':
+        params = {'n_estimators': 100, 'max_depth': 3, 'random_state': 42}
+        params.update(model_kwargs)
+        model = GradientBoostingClassifier(**params)
+        model_type = 'tree'
     elif model_name == 'TabPFN':
         # Prefer CUDA if available, otherwise fall back to CPU to avoid CUDA runtime issues
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -216,6 +221,10 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
             p = {'n_estimators': 100, 'max_depth': 6, 'random_state': 42}
             p.update(params)
             return LightGBMClassifier(**p)
+        elif model_name == 'GradientBoosting':
+            p = {'n_estimators': 100, 'max_depth': 3, 'random_state': 42}
+            p.update(params)
+            return GradientBoostingClassifier(**p)
         elif model_name == 'TabPFN':
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             p = {'device': device, 'N_ensemble_configurations': 32}
