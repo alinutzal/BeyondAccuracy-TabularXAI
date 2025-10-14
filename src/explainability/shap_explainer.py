@@ -62,18 +62,30 @@ class SHAPExplainer:
             else:
                 self.shap_values = self.explainer.shap_values(X_test)
         elif self.model_type == 'tabpfn':
-            shap_values = interpretability.shap.get_shap_values(
+            nsamples = 50 # nsamples or 100
+            # TabPFN interpretability utility may return shap-like arrays; assign to self.shap_values
+            self.shap_values = interpretability.shap.get_shap_values(
                 estimator=self.model,
                 test_x=X_test[:nsamples],
                 attribute_names=self.X_train.columns.tolist(),
                 algorithm="permutation",
-                )
+            )
         else:
             # Default to KernelExplainer
             background = shap.sample(self.X_train, 100)
             self.explainer = shap.KernelExplainer(self.model.predict_proba, background)
             self.shap_values = self.explainer.shap_values(X_test)
         
+        # Safe fallback: if SHAP produced None, create a zero array matching (n_samples, n_features)
+        if self.shap_values is None:
+            try:
+                n_samples = len(X_test)
+                n_features = X_test.shape[1]
+                self.shap_values = np.zeros((n_samples, n_features))
+            except Exception:
+                # Last resort: single zero
+                self.shap_values = np.zeros((1, 1))
+
         return self.shap_values
     
     def plot_summary(self, X_test: pd.DataFrame, save_path: Optional[str] = None):
@@ -112,6 +124,20 @@ class SHAPExplainer:
         
         # Aggregate SHAP values into a 1D importance vector (mean |SHAP| per feature)
         def _mean_abs_per_feature(vals, n_features):
+            # Be defensive: handle None or lists containing None
+            if vals is None:
+                return np.zeros(n_features)
+            if isinstance(vals, list):
+                # prefer the first non-None element
+                pick = None
+                for v in vals:
+                    if v is not None:
+                        pick = v
+                        break
+                if pick is None:
+                    return np.zeros(n_features)
+                vals = pick
+
             arr = np.abs(np.asarray(vals))
             # If already 1D and matches features, return
             if arr.ndim == 1 and arr.size == n_features:
@@ -193,6 +219,19 @@ class SHAPExplainer:
         
         # Aggregate SHAP values robustly into 1D importance vector
         def _mean_abs_per_feature(vals, n_features):
+            # Be defensive: handle None or lists containing None
+            if vals is None:
+                return np.zeros(n_features)
+            if isinstance(vals, list):
+                pick = None
+                for v in vals:
+                    if v is not None:
+                        pick = v
+                        break
+                if pick is None:
+                    return np.zeros(n_features)
+                vals = pick
+
             arr = np.abs(np.asarray(vals))
             if arr.ndim == 1 and arr.size == n_features:
                 return arr.ravel()

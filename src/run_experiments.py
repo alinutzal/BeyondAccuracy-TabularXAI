@@ -280,9 +280,7 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
         except Exception as e:
             print(f"Warning: breast_cancer special evaluations failed: {e}")
 
-    # attach evaluations to results
-    if len(evaluations_results) > 0:
-        results['evaluations'] = evaluations_results
+    # evaluations_results will be attached to the final results dict below when saving
     
     print("\nTraining Metrics:")
     for metric, value in train_metrics.items():
@@ -450,6 +448,9 @@ def run_experiment(dataset_name: str, model_name: str, results_dir: str = '../re
         'test_metrics': convert_to_native(test_metrics),
         'interpretability_metrics': convert_to_native(interpretability_metrics)
     }
+
+    if len(evaluations_results) > 0:
+        results['evaluations'] = convert_to_native(evaluations_results)
     
     # Save as JSON
     with open(os.path.join(experiment_dir, 'results.json'), 'w') as f:
@@ -475,7 +476,7 @@ def run_all_experiments(results_dir: str = '../results', rerun: bool = False):
         rerun: If False and results already exist, skip the experiment. If True, rerun regardless.
     """
     datasets = ['breast_cancer', 'adult_income', 'bank_marketing']
-    models = ['XGBoost', 'LightGBM', 'TabPFN', 'MLP', 'Transformer']
+    models = ['XGBoost', 'LightGBM', 'MLP', 'Transformer', 'TabPFN']
     
     all_results = []
     
