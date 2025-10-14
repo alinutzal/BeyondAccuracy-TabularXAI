@@ -8,9 +8,56 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
 from typing import Dict, Any, Optional
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, average_precision_score, brier_score_loss
+
+
+class FastTensorDataLoader:
+    """
+    A DataLoader-like object for a set of tensors that can be much faster than
+    TensorDataset + DataLoader because dataloader grabs individual indices of
+    the dataset and calls cat (slow).
+    Source: https://discuss.pytorch.org/t/dataloader-much-slower-than-manual-batching/27014/6
+    """
+    def __init__(self, *tensors, batch_size=32, shuffle=False):
+        """
+        Initialize a FastTensorDataLoader.
+
+        :param *tensors: tensors to store. Must have the same length @ dim 0.
+        :param batch_size: batch size to load.
+        :param shuffle: if True, shuffle the data *in-place* whenever an
+            iterator is created out of this object.
+
+        :returns: A FastTensorDataLoader.
+        """
+        assert all(t.shape[0] == tensors[0].shape[0] for t in tensors)
+        self.tensors = tensors
+
+        self.dataset_len = self.tensors[0].shape[0]
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+
+        # Calculate # batches
+        n_batches, remainder = divmod(self.dataset_len, self.batch_size)
+        if remainder > 0:
+            n_batches += 1
+        self.n_batches = n_batches
+    def __iter__(self):
+        if self.shuffle:
+            r = torch.randperm(self.dataset_len)
+            self.tensors = [t[r] for t in self.tensors]
+        self.i = 0
+        return self
+
+    def __next__(self):
+        if self.i >= self.dataset_len:
+            raise StopIteration
+        batch = tuple(t[self.i:self.i+self.batch_size] for t in self.tensors)
+        self.i += self.batch_size
+        return batch
+
+    def __len__(self):
+        return self.n_batches
 
 
 class TabularMLP(nn.Module):
@@ -201,14 +248,12 @@ class MLPClassifier:
             
             if teacher_probs_np is not None:
                 teacher_tensor = torch.FloatTensor(teacher_probs_np)
-                dataset = TensorDataset(X_tensor, y_tensor, teacher_tensor)
+                dataloader = FastTensorDataLoader(X_tensor, y_tensor, teacher_tensor, batch_size=self.batch_size, shuffle=True)
             else:
                 distill_enabled = False
-                dataset = TensorDataset(X_tensor, y_tensor)
+                dataloader = FastTensorDataLoader(X_tensor, y_tensor, batch_size=self.batch_size, shuffle=True)
         else:
-            dataset = TensorDataset(X_tensor, y_tensor)
-        
-        dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+            dataloader = FastTensorDataLoader(X_tensor, y_tensor, batch_size=self.batch_size, shuffle=True)
         
         # Initialize model using configurable architecture
         self.input_dim = X_train.shape[1]
@@ -676,14 +721,12 @@ class TransformerClassifier:
             
             if teacher_probs_np is not None:
                 teacher_tensor = torch.FloatTensor(teacher_probs_np)
-                dataset = TensorDataset(X_tensor, y_tensor, teacher_tensor)
+                dataloader = FastTensorDataLoader(X_tensor, y_tensor, teacher_tensor, batch_size=self.batch_size, shuffle=True)
             else:
                 distill_enabled = False
-                dataset = TensorDataset(X_tensor, y_tensor)
+                dataloader = FastTensorDataLoader(X_tensor, y_tensor, batch_size=self.batch_size, shuffle=True)
         else:
-            dataset = TensorDataset(X_tensor, y_tensor)
-        
-        dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+            dataloader = FastTensorDataLoader(X_tensor, y_tensor, batch_size=self.batch_size, shuffle=True)
         
         # Initialize model
         self.input_dim = X_train.shape[1]
