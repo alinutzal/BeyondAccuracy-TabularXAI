@@ -10,6 +10,11 @@ import torch.nn as nn
 import torch.optim as optim
 from typing import Dict, Any, Optional
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, average_precision_score, brier_score_loss
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from kd import compute_distillation_loss, compute_consistency_penalty, should_enable_distillation, get_distillation_params
 
 
 class FastTensorDataLoader:
@@ -235,7 +240,7 @@ class MLPClassifier:
         y_tensor = torch.LongTensor(y_np)
         
         # Handle distillation teacher probabilities
-        distill_enabled = self.distillation.get('enabled', False) or teacher_probs is not None
+        distill_enabled = should_enable_distillation(self.distillation, teacher_probs)
         if distill_enabled:
             # Use provided teacher_probs or get from distillation config
             if teacher_probs is not None:
@@ -336,11 +341,9 @@ class MLPClassifier:
             scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
         # Get distillation parameters
-        distill_lambda = float(self.distillation.get('lambda', 0.7)) if distill_enabled else 0.0
-        distill_temperature = float(self.distillation.get('temperature', 2.0)) if distill_enabled else 1.0
-        
-        # Get consistency penalty parameters
-        consistency_penalty_cfg = self.distillation.get('consistency_penalty', {}) if distill_enabled else {}
+        distill_lambda, distill_temperature, consistency_penalty_cfg = get_distillation_params(
+            self.distillation, distill_enabled
+        )
         use_consistency_penalty = consistency_penalty_cfg.get('enabled', False)
         top_k_features = consistency_penalty_cfg.get('top_k_features', None)
         consistency_weight = float(consistency_penalty_cfg.get('weight', 0.01))
@@ -403,46 +406,24 @@ class MLPClassifier:
                     outputs = self.model(batch_X)
                     
                     if distill_enabled:
-                        # Distillation loss: L = λ * KL(teacher || student) + (1-λ) * CE(y, student)
-                        # Apply temperature scaling for soft targets
-                        student_log_probs = nn.functional.log_softmax(outputs / distill_temperature, dim=1)
-                        teacher_probs_temp = nn.functional.softmax(batch_teacher_probs / distill_temperature, dim=1)
-                        
-                        # KL divergence loss (with temperature scaling squared)
-                        kl_loss = nn.functional.kl_div(
-                            student_log_probs, 
-                            teacher_probs_temp, 
-                            reduction='batchmean'
-                        ) * (distill_temperature ** 2)
-                        
-                        # Hard label loss (cross-entropy)
-                        ce_loss = criterion(outputs, batch_y)
-                        
-                        # Combined loss
-                        loss = distill_lambda * kl_loss + (1.0 - distill_lambda) * ce_loss
+                        # Compute distillation loss using kd module
+                        loss = compute_distillation_loss(
+                            student_logits=outputs,
+                            teacher_logits=batch_teacher_probs,
+                            labels=batch_y,
+                            criterion=criterion,
+                            temperature=distill_temperature,
+                            alpha=distill_lambda
+                        )
                         
                         # Optional: Add consistency penalty on SHAP top-k features
-                        # This increases sensitivity to important features via Jacobian norm
                         if use_consistency_penalty and top_k_features is not None and len(top_k_features) > 0:
-                            jacobian_penalty = 0.0
-                            for class_idx in range(self.output_dim):
-                                # Get gradients of output w.r.t. input for specific class
-                                grad_outputs = torch.zeros_like(outputs)
-                                grad_outputs[:, class_idx] = 1.0
-                                grads = torch.autograd.grad(
-                                    outputs=outputs,
-                                    inputs=batch_X,
-                                    grad_outputs=grad_outputs,
-                                    create_graph=True,
-                                    retain_graph=True,
-                                    only_inputs=True
-                                )[0]
-                                
-                                # Compute norm only for top-k features (indices)
-                                top_k_indices = torch.tensor(top_k_features, device=self.device, dtype=torch.long)
-                                top_k_grads = grads[:, top_k_indices]
-                                jacobian_penalty += torch.mean(top_k_grads ** 2)
-                            
+                            jacobian_penalty = compute_consistency_penalty(
+                                student_logits=outputs,
+                                inputs=batch_X,
+                                top_k_features=top_k_features,
+                                device=self.device
+                            )
                             # Add penalty to loss (negative to encourage larger gradients = more sensitivity)
                             loss = loss - consistency_weight * jacobian_penalty
                     else:
@@ -706,7 +687,7 @@ class TransformerClassifier:
         y_tensor = torch.LongTensor(self._to_numpy(y_train).ravel())
         
         # Handle distillation teacher probabilities
-        distill_enabled = self.distillation.get('enabled', False) or teacher_probs is not None
+        distill_enabled = should_enable_distillation(self.distillation, teacher_probs)
         if distill_enabled:
             # Use provided teacher_probs or get from distillation config
             if teacher_probs is not None:
@@ -769,11 +750,9 @@ class TransformerClassifier:
             scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
         
         # Get distillation parameters
-        distill_lambda = float(self.distillation.get('lambda', 0.7)) if distill_enabled else 0.0
-        distill_temperature = float(self.distillation.get('temperature', 2.0)) if distill_enabled else 1.0
-        
-        # Get consistency penalty parameters
-        consistency_penalty_cfg = self.distillation.get('consistency_penalty', {}) if distill_enabled else {}
+        distill_lambda, distill_temperature, consistency_penalty_cfg = get_distillation_params(
+            self.distillation, distill_enabled
+        )
         use_consistency_penalty = consistency_penalty_cfg.get('enabled', False)
         top_k_features = consistency_penalty_cfg.get('top_k_features', None)
         consistency_weight = float(consistency_penalty_cfg.get('weight', 0.01))
@@ -837,46 +816,24 @@ class TransformerClassifier:
                     outputs = self.model(batch_X)
                     
                     if distill_enabled:
-                        # Distillation loss: L = λ * KL(teacher || student) + (1-λ) * CE(y, student)
-                        # Apply temperature scaling for soft targets
-                        student_log_probs = nn.functional.log_softmax(outputs / distill_temperature, dim=1)
-                        teacher_probs_temp = nn.functional.softmax(batch_teacher_probs / distill_temperature, dim=1)
-                        
-                        # KL divergence loss (with temperature scaling squared)
-                        kl_loss = nn.functional.kl_div(
-                            student_log_probs, 
-                            teacher_probs_temp, 
-                            reduction='batchmean'
-                        ) * (distill_temperature ** 2)
-                        
-                        # Hard label loss (cross-entropy)
-                        ce_loss = criterion(outputs, batch_y)
-                        
-                        # Combined loss
-                        loss = distill_lambda * kl_loss + (1.0 - distill_lambda) * ce_loss
+                        # Compute distillation loss using kd module
+                        loss = compute_distillation_loss(
+                            student_logits=outputs,
+                            teacher_logits=batch_teacher_probs,
+                            labels=batch_y,
+                            criterion=criterion,
+                            temperature=distill_temperature,
+                            alpha=distill_lambda
+                        )
                         
                         # Optional: Add consistency penalty on SHAP top-k features
-                        # This increases sensitivity to important features via Jacobian norm
                         if use_consistency_penalty and top_k_features is not None and len(top_k_features) > 0:
-                            jacobian_penalty = 0.0
-                            for class_idx in range(self.output_dim):
-                                # Get gradients of output w.r.t. input for specific class
-                                grad_outputs = torch.zeros_like(outputs)
-                                grad_outputs[:, class_idx] = 1.0
-                                grads = torch.autograd.grad(
-                                    outputs=outputs,
-                                    inputs=batch_X,
-                                    grad_outputs=grad_outputs,
-                                    create_graph=True,
-                                    retain_graph=True,
-                                    only_inputs=True
-                                )[0]
-                                
-                                # Compute norm only for top-k features (indices)
-                                top_k_indices = torch.tensor(top_k_features, device=self.device, dtype=torch.long)
-                                top_k_grads = grads[:, top_k_indices]
-                                jacobian_penalty += torch.mean(top_k_grads ** 2)
-                            
+                            jacobian_penalty = compute_consistency_penalty(
+                                student_logits=outputs,
+                                inputs=batch_X,
+                                top_k_features=top_k_features,
+                                device=self.device
+                            )
                             # Add penalty to loss (negative to encourage larger gradients = more sensitivity)
                             loss = loss - consistency_weight * jacobian_penalty
                     else:

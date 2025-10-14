@@ -235,14 +235,21 @@ This tests:
 
 ### File Changes
 
+- `src/kd.py`:
+  - Core knowledge distillation utilities module
+  - `compute_distillation_loss()`: Computes combined KL divergence and cross-entropy loss
+  - `compute_consistency_penalty()`: Computes Jacobian norm penalty for feature importance
+  - `should_enable_distillation()`: Helper to check if distillation is enabled
+  - `get_distillation_params()`: Extracts distillation parameters from configuration
+
 - `src/models/deep_learning.py`:
   - Added `distillation` parameter to MLPClassifier and TransformerClassifier
   - Added `teacher_probs` parameter to `train()` methods
-  - Implemented KL divergence loss with temperature scaling
-  - Implemented optional Jacobian norm consistency penalty
+  - Uses `kd.py` module for distillation loss computation
 
 ### New Files
 
+- `src/kd.py`: Knowledge distillation utilities module
 - `examples/xgboost_distillation_example.py`: Basic distillation demo
 - `examples/distillation_with_shap_penalty_example.py`: SHAP penalty demo
 - `test_distillation.py`: Comprehensive test suite
