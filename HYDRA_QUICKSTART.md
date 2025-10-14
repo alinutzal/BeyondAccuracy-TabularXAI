@@ -66,6 +66,13 @@ python run_experiments_hydra.py model=transformer_small
 python run_experiments_hydra.py model=transformer_large
 ```
 
+**TabPFN (Pre-trained Transformer):**
+```bash
+python run_experiments_hydra.py model=tabpfn_default    # Balanced (32 ensembles)
+python run_experiments_hydra.py model=tabpfn_fast       # Fast (8 ensembles)
+python run_experiments_hydra.py model=tabpfn_accurate   # Accurate (64 ensembles)
+```
+
 ### 3. Change Dataset
 
 ```bash
