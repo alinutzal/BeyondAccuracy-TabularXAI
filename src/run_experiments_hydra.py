@@ -17,7 +17,9 @@ from omegaconf import DictConfig, OmegaConf
 import torch
 
 from utils.data_loader import DataLoader
-from models import XGBoostClassifier, LightGBMClassifier, GradientBoostingClassifier, TabPFNClassifier, MLPClassifier, TransformerClassifier
+from models import (XGBoostClassifier, LightGBMClassifier, GradientBoostingClassifier, 
+                    TabPFNClassifier, MLPClassifier, TransformerClassifier,
+                    MLPDistillationClassifier, TransformerDistillationClassifier)
 from explainability import SHAPExplainer, LIMEExplainer
 from metrics import InterpretabilityMetrics
 from utils.eval import Evaluator
@@ -55,6 +57,12 @@ def create_model(cfg: DictConfig):
         model_type = 'deep'
     elif model_name == 'Transformer':
         model = TransformerClassifier(**model_params)
+        model_type = 'deep'
+    elif model_name == 'MLP_Distillation':
+        model = MLPDistillationClassifier(**model_params)
+        model_type = 'deep'
+    elif model_name == 'Transformer_Distillation':
+        model = TransformerDistillationClassifier(**model_params)
         model_type = 'deep'
     else:
         raise ValueError(f"Unknown model: {model_name}")

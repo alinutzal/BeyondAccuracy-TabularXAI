@@ -1417,3 +1417,187 @@ class TransformerClassifier:
                 metrics['roc_auc'] = None
         
         return metrics
+
+
+class MLPDistillationClassifier(MLPClassifier):
+    """
+    MLP classifier with knowledge distillation enabled by default.
+    
+    This is a specialized version of MLPClassifier that is configured for
+    knowledge distillation from a teacher model (e.g., XGBoost).
+    
+    Usage:
+        # Train teacher model
+        teacher = XGBoostClassifier(...)
+        teacher.train(X_train, y_train)
+        teacher_probs = teacher.predict_proba(X_train)
+        teacher_logits = np.log(teacher_probs + 1e-10)
+        
+        # Train distilled student
+        student = MLPDistillationClassifier(
+            hidden_dims=[128, 64, 32],
+            distillation={'lambda': 0.7, 'temperature': 2.0}
+        )
+        student.train(X_train, y_train, teacher_probs=teacher_logits)
+    """
+    
+    def __init__(
+        self,
+        hidden_dims: list = [128, 64, 32],
+        activation: str = 'relu',
+        layer_norm_per_block: bool = False,
+        batch_norm_per_block: bool = False,
+        dropout: float = 0.2,
+        embedding_dropout: float = 0.0,
+        weight_decay: float = 0.0,
+        mixup: Optional[Dict[str, Any]] = None,
+        gaussian_noise: Optional[Dict[str, Any]] = None,
+        label_smoothing: float = 0.0,
+        optimizer: Optional[Dict[str, Any]] = None,
+        scheduler: Optional[Dict[str, Any]] = None,
+        swa: Optional[Dict[str, Any]] = None,
+        training: Optional[Dict[str, Any]] = None,
+        random_seed: Optional[int] = None,
+        device: Optional[str] = None,
+        gaussian_noise_sigma: float = 0.0,
+        distillation: Optional[Dict[str, Any]] = None,
+        use_lightning: bool = False,
+        **kwargs
+    ):
+        """
+        Initialize MLP classifier with distillation enabled by default.
+        
+        The distillation parameter is automatically enabled if not explicitly disabled.
+        Default distillation config: {'enabled': True, 'lambda': 0.7, 'temperature': 2.0}
+        
+        Args:
+            Same as MLPClassifier, but distillation is enabled by default.
+        """
+        # Enable distillation by default with sensible defaults
+        if distillation is None:
+            distillation = {
+                'enabled': True,
+                'lambda': 0.7,
+                'temperature': 2.0
+            }
+        elif isinstance(distillation, dict) and 'enabled' not in distillation:
+            distillation['enabled'] = True
+        
+        super().__init__(
+            hidden_dims=hidden_dims,
+            activation=activation,
+            layer_norm_per_block=layer_norm_per_block,
+            batch_norm_per_block=batch_norm_per_block,
+            dropout=dropout,
+            embedding_dropout=embedding_dropout,
+            weight_decay=weight_decay,
+            mixup=mixup,
+            gaussian_noise=gaussian_noise,
+            label_smoothing=label_smoothing,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            swa=swa,
+            training=training,
+            random_seed=random_seed,
+            device=device,
+            gaussian_noise_sigma=gaussian_noise_sigma,
+            distillation=distillation,
+            use_lightning=use_lightning,
+            **kwargs
+        )
+        self.model_name = "MLP_Distillation"
+
+
+class TransformerDistillationClassifier(TransformerClassifier):
+    """
+    Transformer classifier with knowledge distillation enabled by default.
+    
+    This is a specialized version of TransformerClassifier that is configured for
+    knowledge distillation from a teacher model (e.g., XGBoost).
+    
+    Usage:
+        # Train teacher model
+        teacher = XGBoostClassifier(...)
+        teacher.train(X_train, y_train)
+        teacher_probs = teacher.predict_proba(X_train)
+        teacher_logits = np.log(teacher_probs + 1e-10)
+        
+        # Train distilled student
+        student = TransformerDistillationClassifier(
+            d_model=64,
+            nhead=4,
+            distillation={'lambda': 0.7, 'temperature': 2.0}
+        )
+        student.train(X_train, y_train, teacher_probs=teacher_logits)
+    """
+    
+    def __init__(
+        self,
+        d_model: int = 64,
+        nhead: int = 4,
+        num_layers: int = 2,
+        dim_feedforward: int = 256,
+        dropout: float = 0.1,
+        weight_decay: float = 0.0,
+        mixup: Optional[Dict[str, Any]] = None,
+        gaussian_noise: Optional[Dict[str, Any]] = None,
+        label_smoothing: float = 0.0,
+        optimizer: Optional[Dict[str, Any]] = None,
+        scheduler: Optional[Dict[str, Any]] = None,
+        swa: Optional[Dict[str, Any]] = None,
+        training: Optional[Dict[str, Any]] = None,
+        random_seed: Optional[int] = None,
+        device: Optional[str] = None,
+        distillation: Optional[Dict[str, Any]] = None,
+        use_lightning: bool = False,
+        # Legacy parameters for backward compatibility
+        learning_rate: float = 0.001,
+        batch_size: int = 1024,
+        epochs: int = 100,
+        gaussian_noise_sigma: float = 0.0,
+        **kwargs
+    ):
+        """
+        Initialize Transformer classifier with distillation enabled by default.
+        
+        The distillation parameter is automatically enabled if not explicitly disabled.
+        Default distillation config: {'enabled': True, 'lambda': 0.7, 'temperature': 2.0}
+        
+        Args:
+            Same as TransformerClassifier, but distillation is enabled by default.
+        """
+        # Enable distillation by default with sensible defaults
+        if distillation is None:
+            distillation = {
+                'enabled': True,
+                'lambda': 0.7,
+                'temperature': 2.0
+            }
+        elif isinstance(distillation, dict) and 'enabled' not in distillation:
+            distillation['enabled'] = True
+        
+        super().__init__(
+            d_model=d_model,
+            nhead=nhead,
+            num_layers=num_layers,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            weight_decay=weight_decay,
+            mixup=mixup,
+            gaussian_noise=gaussian_noise,
+            label_smoothing=label_smoothing,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            swa=swa,
+            training=training,
+            random_seed=random_seed,
+            device=device,
+            distillation=distillation,
+            use_lightning=use_lightning,
+            learning_rate=learning_rate,
+            batch_size=batch_size,
+            epochs=epochs,
+            gaussian_noise_sigma=gaussian_noise_sigma,
+            **kwargs
+        )
+        self.model_name = "Transformer_Distillation"
