@@ -52,6 +52,20 @@ python run_experiments_hydra.py model=gradient_boosting_shallow
 python run_experiments_hydra.py model=gradient_boosting_deep
 ```
 
+**MLP (Deep Learning):**
+```bash
+python run_experiments_hydra.py model=mlp_default
+python run_experiments_hydra.py model=mlp_small
+python run_experiments_hydra.py model=mlp_large
+```
+
+**Transformer (Deep Learning):**
+```bash
+python run_experiments_hydra.py model=transformer_default
+python run_experiments_hydra.py model=transformer_small
+python run_experiments_hydra.py model=transformer_large
+```
+
 ### 3. Change Dataset
 
 ```bash

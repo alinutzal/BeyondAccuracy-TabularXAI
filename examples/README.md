@@ -6,7 +6,7 @@ This directory contains example scripts demonstrating how to use the BeyondAccur
 
 ### hydra_example.py
 
-**NEW:** Demonstrates using Hydra configuration management for gradient boosting models:
+Demonstrates using Hydra configuration management for gradient boosting models:
 1. Shows how to use different parameter configurations
 2. Compares XGBoost, LightGBM, and GradientBoosting variants
 3. Demonstrates the benefits of configuration management
@@ -23,6 +23,27 @@ python examples/hydra_example.py
 - Examples of Hydra command-line usage
 
 **Note:** See [HYDRA_QUICKSTART.md](../HYDRA_QUICKSTART.md) for quick start guide or [HYDRA_USAGE.md](../HYDRA_USAGE.md) for detailed documentation.
+
+### deep_learning_hydra_example.py
+
+**NEW:** Demonstrates using Hydra configuration management for deep learning models:
+1. Shows how to load and use MLP and Transformer configurations
+2. Compares different model variants (default, small, large)
+3. Demonstrates parameter overriding with Hydra
+4. Provides side-by-side comparison of all deep learning configs
+
+**Run it:**
+```bash
+python examples/deep_learning_hydra_example.py
+```
+
+**Expected output:**
+- Configuration loading for MLP and Transformer models
+- Comparison of small, default, and large variants
+- Parameter override examples
+- Command-line usage examples
+
+**Note:** See [DEEP_LEARNING_HYDRA.md](../DEEP_LEARNING_HYDRA.md) for comprehensive deep learning Hydra guide.
 
 ### simple_example.py
 

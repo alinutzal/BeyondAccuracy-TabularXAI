@@ -1,0 +1,47 @@
+# @package _global_
+# Large Transformer configuration - high capacity for large datasets
+
+model:
+  name: Transformer
+  params:
+    d_model: 256
+    nhead: 8
+    num_layers: 4
+    dim_feedforward: 512
+    dropout: 0.3
+    weight_decay: 3e-4
+    
+    mixup:
+      enabled: true
+      alpha: 0.1
+    
+    gaussian_noise:
+      enabled: false
+    
+    label_smoothing: 0.03
+    
+    optimizer:
+      name: AdamW
+      lr: 0.0005
+      betas: [0.9, 0.999]
+      eps: 1e-8
+    
+    scheduler:
+      name: cosine
+      warmup_proportion: 0.08
+      min_lr: 0.0
+    
+    swa:
+      enabled: true
+      final_epochs: 20
+    
+    training:
+      batch_size: 1024
+      epochs: 300
+      early_stopping:
+        enabled: true
+        monitor: val_loss
+        patience: 20
+      auto_device: true
+    
+    random_seed: 42

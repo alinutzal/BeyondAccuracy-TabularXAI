@@ -1,0 +1,46 @@
+# @package _global_
+# Large MLP configuration - high capacity for large datasets
+
+model:
+  name: MLP
+  params:
+    hidden_dims: [512, 512, 256, 256]
+    activation: geglu
+    layer_norm_per_block: true
+    dropout: 0.25
+    embedding_dropout: 0.1
+    weight_decay: 2e-4
+    
+    mixup:
+      enabled: true
+      alpha: 0.2
+    
+    gaussian_noise:
+      enabled: false
+    
+    label_smoothing: 0.03
+    
+    optimizer:
+      name: AdamW
+      lr: 0.001
+      betas: [0.9, 0.999]
+      eps: 1e-8
+    
+    scheduler:
+      name: cosine
+      warmup_proportion: 0.08
+      min_lr: 0.0
+    
+    swa:
+      enabled: false
+    
+    training:
+      batch_size: 1024
+      epochs: 200
+      early_stopping:
+        enabled: true
+        monitor: val_loss
+        patience: 10
+      auto_device: true
+    
+    random_seed: 42
