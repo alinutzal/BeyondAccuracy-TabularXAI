@@ -1,0 +1,23 @@
+# @package _global_
+# Default TabPFN configuration
+# TabPFN is a pre-trained transformer model for small tabular classification tasks
+
+model:
+  name: TabPFN
+  params:
+    # Device to run on (auto-detected if not specified)
+    device: cuda
+    
+    # Number of ensemble configurations (higher = better but slower)
+    # Recommended: 16-64 for balance, 1-8 for speed, 64-256 for accuracy
+    N_ensemble_configurations: 32
+    
+    # Random seed for reproducibility
+    random_state: 42
+    
+    # Note: TabPFN is a pre-trained model and doesn't require traditional training
+    # It performs in-context learning on the fly
+    # Limitations:
+    #   - Max 10,000 training samples
+    #   - Max 100 features
+    #   - Binary or multi-class classification only

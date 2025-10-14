@@ -90,6 +90,18 @@ python run_experiments_hydra.py model=transformer_small
 python run_experiments_hydra.py model=transformer_large
 ```
 
+**TabPFN (Pre-trained Transformer) variants:**
+```bash
+# Default configuration (balanced - 32 ensembles)
+python run_experiments_hydra.py model=tabpfn_default
+
+# Fast configuration (quick experiments - 8 ensembles)
+python run_experiments_hydra.py model=tabpfn_fast
+
+# Accurate configuration (best results - 64 ensembles)
+python run_experiments_hydra.py model=tabpfn_accurate
+```
+
 ### Changing Datasets
 
 ```bash
@@ -133,7 +145,10 @@ conf/
     ├── mlp_large.yaml
     ├── transformer_default.yaml
     ├── transformer_small.yaml
-    └── transformer_large.yaml
+    ├── transformer_large.yaml
+    ├── tabpfn_default.yaml
+    ├── tabpfn_fast.yaml
+    └── tabpfn_accurate.yaml
 ```
 
 ### Main Configuration (config.yaml)

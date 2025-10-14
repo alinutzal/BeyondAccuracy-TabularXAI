@@ -14,20 +14,34 @@ except ImportError:
     TABPFN_AVAILABLE = False
     TabPFNModel = None
 
+# PyTorch Lightning imports (for future extensibility)
+try:
+    import lightning as L
+    LIGHTNING_AVAILABLE = True
+except ImportError:
+    LIGHTNING_AVAILABLE = False
+
 class TabPFNClassifier:
     """TabPFN classifier wrapper for Prior-Fitted Networks."""
     
-    def __init__(self, **kwargs):
+    def __init__(self, use_lightning: bool = False, **kwargs):
         """
         Initialize TabPFN classifier.
         
         Args:
+            use_lightning: Whether to use PyTorch Lightning wrapper (for API consistency; 
+                          TabPFN is pre-trained and doesn't require training)
             **kwargs: Parameters for TabPFNClassifier
         """
         if not TABPFN_AVAILABLE:
             raise ImportError(
                 "TabPFN is not installed. Please install it with: pip install tabpfn"
             )
+        
+        # Store Lightning flag (for API consistency with other models)
+        self.use_lightning = use_lightning and LIGHTNING_AVAILABLE
+        if use_lightning and not LIGHTNING_AVAILABLE:
+            print("Warning: PyTorch Lightning not available. Proceeding without Lightning.")
         
         # TabPFN doesn't need many hyperparameters as it's a pre-trained model
         # Provide sensible defaults but only pass supported args to TabPFNModel
