@@ -52,7 +52,7 @@ BeyondAccuracy-TabularXAI/
 4. **Transformer**: Attention-based deep learning architecture for tabular data
 5. **MLP with PyTorch Lightning**: Modern deep learning with Lightning's advanced features (optional)
 
-**Note**: Deep learning models now support PyTorch Lightning for cleaner code and advanced features. See `readmd/PYTORCH_LIGHTNING_IMPLEMENTATION.md` for details.
+**Note**: Deep learning models (MLP, Transformer, TabPFN) now support PyTorch Lightning for cleaner code and advanced features. TabPFN also includes Hydra configuration support. See `readmd/PYTORCH_LIGHTNING_IMPLEMENTATION.md` and `readmd/TABPFN_LIGHTNING_HYDRA.md` for details.
 
 ### Datasets
 
