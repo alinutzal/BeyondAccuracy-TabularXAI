@@ -217,3 +217,7 @@ results/*.csv
 *.png
 *.jpg
 *.pdf
+
+# PyTorch Lightning
+checkpoints/
+lightning_logs/
