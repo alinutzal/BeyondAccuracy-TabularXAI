@@ -785,7 +785,7 @@ class MLPClassifier:
             prev = h
 
         layers.append(nn.Linear(prev, self.output_dim))
-        model_net = nn.Sequential(*layers)
+        model_net = nn.Sequential(*layers).to(self.device)
         
         # Loss function
         if self.label_smoothing and self.label_smoothing > 0:
@@ -1284,7 +1284,7 @@ class TransformerClassifier:
         # Initialize model
         self.input_dim = X_train.shape[1]
         self.output_dim = len(np.unique(y_tensor.numpy()))
-        model = self._build_model()
+        model = self._build_model().to(self.device)
         
         # Loss with label smoothing support
         if self.label_smoothing and self.label_smoothing > 0:
