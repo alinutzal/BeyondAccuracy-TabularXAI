@@ -38,7 +38,7 @@ model:
     
     training:
       batch_size: 128
-      epochs: 200
+      epochs: 300
       early_stopping:
         enabled: true
         monitor: val_loss
