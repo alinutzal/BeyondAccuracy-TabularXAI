@@ -101,11 +101,11 @@ class XGBoostClassifier:
 
     def tune_hyperparameters(self, X, y, param_grid: Dict[str, Any], scoring: Optional[str] = 'roc_auc',
                              cv: int = 3, n_iter: Optional[int] = None, n_jobs: int = -1,
-                             random_state: Optional[int] = 42, refit: bool = True, verbose: int = 1) -> Dict[str, Any]:
+                             random_state: Optional[int] = 42, refit: bool = True, verbose: int = 1, optuna_n_trials: Optional[int] = None) -> Dict[str, Any]:
         """
         Tune hyperparameters for the underlying XGBoost estimator.
 
-        Uses utils.hyperparameter_tuning.tune_model to run Grid/Randomized search.
+        Uses utils.hyperparameter_tuning.tune_model to run Grid/Randomized search or Optuna when `optuna_n_trials` is set.
         If `refit` is True, the wrapper's `self.model` will be replaced with the best estimator.
         """
         from utils.hyperparameter_tuning import tune_model
@@ -122,6 +122,7 @@ class XGBoostClassifier:
             random_state=random_state,
             refit=refit,
             verbose=verbose,
+            optuna_n_trials=optuna_n_trials,
         )
 
         if refit and res.get('best_estimator') is not None:
@@ -213,11 +214,11 @@ class LightGBMClassifier:
 
     def tune_hyperparameters(self, X, y, param_grid: Dict[str, Any], scoring: Optional[str] = 'roc_auc',
                              cv: int = 3, n_iter: Optional[int] = None, n_jobs: int = -1,
-                             random_state: Optional[int] = 42, refit: bool = True, verbose: int = 1) -> Dict[str, Any]:
+                             random_state: Optional[int] = 42, refit: bool = True, verbose: int = 1, optuna_n_trials: Optional[int] = None) -> Dict[str, Any]:
         """
         Tune hyperparameters for the underlying LightGBM estimator.
 
-        Uses utils.hyperparameter_tuning.tune_model to run Grid/Randomized search.
+        Uses utils.hyperparameter_tuning.tune_model to run Grid/Randomized search or Optuna when `optuna_n_trials` is set.
         If `refit` is True, the wrapper's `self.model` will be replaced with the best estimator.
         """
         from utils.hyperparameter_tuning import tune_model
@@ -234,6 +235,7 @@ class LightGBMClassifier:
             random_state=random_state,
             refit=refit,
             verbose=verbose,
+            optuna_n_trials=optuna_n_trials,
         )
 
         if refit and res.get('best_estimator') is not None:
@@ -343,7 +345,7 @@ class CatBoostModel:
 
     def tune_hyperparameters(self, X, y, param_grid: Dict[str, Any], scoring: Optional[str] = 'roc_auc',
                              cv: int = 3, n_iter: Optional[int] = None, n_jobs: int = -1,
-                             random_state: Optional[int] = 42, refit: bool = True, verbose: int = 1) -> Dict[str, Any]:
+                             random_state: Optional[int] = 42, refit: bool = True, verbose: int = 1, optuna_n_trials: Optional[int] = None) -> Dict[str, Any]:
         from utils.hyperparameter_tuning import tune_model
 
         res = tune_model(
@@ -358,6 +360,7 @@ class CatBoostModel:
             random_state=random_state,
             refit=refit,
             verbose=verbose,
+            optuna_n_trials=optuna_n_trials,
         )
 
         if refit and res.get('best_estimator') is not None:
@@ -426,11 +429,11 @@ class CatBoostModel:
 
     def tune_hyperparameters(self, X, y, param_grid: Dict[str, Any], scoring: Optional[str] = 'roc_auc',
                              cv: int = 3, n_iter: Optional[int] = None, n_jobs: int = -1,
-                             random_state: Optional[int] = 42, refit: bool = True, verbose: int = 1) -> Dict[str, Any]:
+                             random_state: Optional[int] = 42, refit: bool = True, verbose: int = 1, optuna_n_trials: Optional[int] = None) -> Dict[str, Any]:
         """
         Tune hyperparameters for the underlying scikit-learn GradientBoosting estimator.
 
-        Uses utils.hyperparameter_tuning.tune_model to run Grid/Randomized search.
+        Uses utils.hyperparameter_tuning.tune_model to run Grid/Randomized search or Optuna when `optuna_n_trials` is set.
         If `refit` is True, the wrapper's `self.model` will be replaced with the best estimator.
         """
         from utils.hyperparameter_tuning import tune_model
@@ -447,6 +450,7 @@ class CatBoostModel:
             random_state=random_state,
             refit=refit,
             verbose=verbose,
+            optuna_n_trials=optuna_n_trials,
         )
 
         if refit and res.get('best_estimator') is not None:

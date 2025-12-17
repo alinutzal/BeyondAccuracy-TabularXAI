@@ -69,6 +69,10 @@ class DataLoader:
         try:
             data = fetch_openml('adult', version=2, as_frame=True, parser='auto')
             X = data.data
+            
+            # Ensure we own the DataFrame to avoid SettingWithCopyWarning when mutating
+            X = X.copy()
+            
             y = data.target
             
             # Encode target
@@ -108,6 +112,10 @@ class DataLoader:
         try:
             data = fetch_openml('bank-marketing', version=1, as_frame=True, parser='auto')
             X = data.data
+            
+            # Make an explicit copy before modifying
+            X = X.copy()
+            
             y = data.target
             
             # Encode target

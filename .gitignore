@@ -222,3 +222,4 @@ results/*.csv
 checkpoints/
 lightning_logs/
 src/outputs/
+catboost_info/

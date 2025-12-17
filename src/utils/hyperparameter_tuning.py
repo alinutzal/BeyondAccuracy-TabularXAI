@@ -1,7 +1,8 @@
 """Hyperparameter tuning utilities using scikit-learn search strategies."""
 
 from typing import Any, Dict, Optional
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, cross_val_score
+from sklearn.base import clone
 import numpy as np
 
 
@@ -29,12 +30,13 @@ def tune_model(
     refit: bool = True,
     verbose: int = 1,
     fit_params: Optional[Dict[str, Any]] = None,
+    optuna_n_trials: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
-    Tune hyperparameters using GridSearchCV or RandomizedSearchCV.
+    Tune hyperparameters using GridSearchCV, RandomizedSearchCV or Optuna.
 
     Notes:
-    - For large parameter grids prefer `n_iter` (RandomizedSearchCV) to reduce runtime.
+    - For large parameter grids prefer `n_iter` (RandomizedSearchCV) or use `optuna_n_trials` to run an Optuna-based search.
     - Use `fit_params` to pass estimator-specific params (e.g. early_stopping_rounds via `eval_set`).
 
     Args:
@@ -46,11 +48,12 @@ def tune_model(
         cv: number of CV folds
         n_iter: if provided (>0), use RandomizedSearchCV with this many iterations;
                 otherwise GridSearchCV is used
-        n_jobs: parallel jobs
-        random_state: random seed for RandomizedSearchCV sampling
+        n_jobs: parallel jobs (passed to sklearn searchers or cross_val_score)
+        random_state: random seed for RandomizedSearchCV sampling or Optuna
         refit: whether to refit best estimator on whole data
         verbose: verbosity level
         fit_params: additional kwargs to pass to estimator.fit
+        optuna_n_trials: if provided (>0), use Optuna to run specified number of trials
 
     Returns:
         dict with keys: 'best_estimator', 'best_params', 'best_score', 'cv_results'
@@ -58,11 +61,80 @@ def tune_model(
     # Warn if the grid is large
     try:
         size = _grid_size(param_grid)
-        if n_iter is None and size > 50:
+        # Only warn when GridSearchCV would be used (i.e., no n_iter and no optuna requested)
+        if n_iter is None and (optuna_n_trials is None or int(optuna_n_trials) == 0) and size > 50:
             print(f"⚠️ Parameter grid contains {size} combinations — consider using `n_iter` (RandomizedSearchCV) or reducing ranges")
     except Exception:
         size = None
 
+    # Optuna-based search takes precedence if requested
+    if optuna_n_trials is not None and int(optuna_n_trials) > 0:
+        try:
+            import optuna
+        except Exception:
+            raise ImportError('optuna is not installed; install via `pip install optuna` to use optuna-based tuning')
+
+        # Use categorical suggestions from provided lists
+        def _suggest_params(trial):
+            params = {}
+            for k, v in param_grid.items():
+                if hasattr(v, '__len__'):
+                    # treat as categorical choices
+                    params[k] = trial.suggest_categorical(k, list(v))
+                else:
+                    # fallback to fixed value
+                    params[k] = v
+            return params
+
+        def objective(trial):
+            params = _suggest_params(trial)
+            # clone estimator to avoid side effects
+            est = clone(estimator)
+            try:
+                est.set_params(**params)
+            except Exception:
+                # some estimators may not accept certain keys; let fit handle or raise
+                pass
+            # Use cross_val_score to evaluate
+            try:
+                scores = cross_val_score(est, X, y, scoring=scoring, cv=cv, n_jobs=n_jobs)
+            except Exception as e:
+                # If scoring fails, bubble up to fail the trial
+                raise
+            # Optuna maximizes objective by default here (compatible with sklearn's negative scorers)
+            return float(scores.mean())
+
+        study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=random_state))
+        try:
+            study.optimize(objective, n_trials=int(optuna_n_trials))
+        except KeyboardInterrupt:
+            print('\nInterrupted by user during Optuna search — returning partial results.')
+
+        best_params = study.best_trial.params if study.best_trial is not None else None
+        best_score = study.best_value if study.best_trial is not None else None
+
+        best_est = None
+        if refit and best_params is not None:
+            best_est = clone(estimator)
+            try:
+                best_est.set_params(**best_params)
+            except Exception:
+                pass
+            if fit_params:
+                best_est.fit(X, y, **fit_params)
+            else:
+                best_est.fit(X, y)
+
+        return {
+            'best_estimator': best_est,
+            'best_params': best_params,
+            'best_score': best_score,
+            'cv_results': None,
+            'study': study,
+            'interrupted': False,
+        }
+
+    # Fall back to sklearn searchers
     if n_iter is not None and int(n_iter) > 0:
         searcher = RandomizedSearchCV(
             estimator=estimator,
