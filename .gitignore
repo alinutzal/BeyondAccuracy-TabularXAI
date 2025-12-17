@@ -221,3 +221,4 @@ results/*.csv
 # PyTorch Lightning
 checkpoints/
 lightning_logs/
+src/outputs/
