@@ -12,17 +12,23 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
+# Add src to path for imports
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+SRC = os.path.join(ROOT, 'src')
+sys.path.insert(0, ROOT)
+sys.path.insert(0, SRC)
+
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import torch
 
-from utils.data_loader import DataLoader
-from models import (XGBoostClassifier, LightGBMClassifier, GradientBoostingClassifier, CatBoostClassifier,
+from src.utils.data_loader import DataLoader
+from src.models import (XGBoostClassifier, LightGBMClassifier, GradientBoostingClassifier, CatBoostClassifier,
                     TabPFNClassifier, MLPClassifier, TransformerClassifier,
                     MLPDistillationClassifier, TransformerDistillationClassifier)
-from explainability import SHAPExplainer, LIMEExplainer
-from metrics import InterpretabilityMetrics
-from utils.eval import Evaluator
+from src.explainability import SHAPExplainer, LIMEExplainer
+from src.metrics import InterpretabilityMetrics
+from src.utils.eval import Evaluator
 
 
 def create_model(cfg: DictConfig, override_params: dict = None):
@@ -36,12 +42,17 @@ def create_model(cfg: DictConfig, override_params: dict = None):
     Returns:
         Model instance and model type
     """
-    model_name = cfg.model.name
-    model_params = OmegaConf.to_container(cfg.model.params, resolve=True)
+    # Support cfg.model being a plain string (e.g., when users pass overrides like model=XGBoost)
+    model_node = cfg.model
+    if isinstance(model_node, str):
+        model_name = model_node
+        model_params = {}
+    else:
+        model_name = getattr(model_node, 'name', str(model_node))
+        model_params = OmegaConf.to_container(getattr(model_node, 'params', {}) or {}, resolve=True)
 
-    # Apply overrides from hyperparameter tuning if provided
+    # Apply overrides from hyperparameter tuning if provided (shallow merge)
     if override_params:
-        # shallow merge - override or add keys from override_params
         model_params.update(override_params)
     
     # normalize model name checks
@@ -53,6 +64,10 @@ def create_model(cfg: DictConfig, override_params: dict = None):
         model_type = 'tree'
     elif model_name == 'GradientBoosting':
         model = GradientBoostingClassifier(**model_params)
+        model_type = 'tree'
+    elif model_name == 'CatBoost':
+        print("catboost param:",model_params)
+        model = CatBoostClassifier(**model_params)
         model_type = 'tree'
     elif model_name == 'TabPFN':
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -74,7 +89,8 @@ def create_model(cfg: DictConfig, override_params: dict = None):
     else:
         raise ValueError(f"Unknown model: {model_name}")
     
-    return model, model_type
+    # Return model instance, its type, and the final params dict used to instantiate it
+    return model, model_type, model_params
 
 
 def _canonical_model_key(model_name: str) -> str:
@@ -104,49 +120,33 @@ def _load_best_params(results_dir: str, dataset_name: str, model_name: str, expl
 
     Returns: dict of best params or None if not found
     """
-    candidates = []
-    if explicit_file:
-        candidates.append(explicit_file)
-    candidates.append(os.path.join(results_dir, 'best_params.json'))
-    candidates.append(os.path.join(results_dir, f"{dataset_name}_best_params.json"))
-    candidates.append(os.path.join(results_dir, 'hyperparameter_tuning_summary.json'))
+    print("Exception file:", explicit_file)
 
     model_key = _canonical_model_key(model_name)
 
-    for p in candidates:
-        if p and os.path.exists(p):
-            try:
-                with open(p, 'r') as f:
-                    data = json.load(f)
-            except Exception:
-                continue
 
-            # If file is per-dataset (top-level keys are model keys)
-            if model_key in data:
-                entry = data.get(model_key)
-                # entry might be {best_score, best_params} or directly params
-                if isinstance(entry, dict) and 'best_params' in entry:
-                    return entry.get('best_params')
-                if isinstance(entry, dict) and any(k in entry for k in ['best_score', 'best_params']):
-                    return entry.get('best_params')
-                # otherwise assume entry itself is params dict
-                if isinstance(entry, dict):
-                    return entry
+    if explicit_file and os.path.exists(explicit_file):
+        try:
+            with open(explicit_file, 'r') as f:
+                data = json.load(f)
+        except Exception:
+            print(f"Warning: failed to read explicit best params file: {explicit_file}")
 
-            # If file maps dataset -> model -> info
-            if dataset_name in data:
-                ds_entry = data.get(dataset_name, {})
-                if isinstance(ds_entry, dict) and model_key in ds_entry:
-                    info = ds_entry.get(model_key)
-                    if isinstance(info, dict) and 'best_params' in info:
-                        return info.get('best_params')
-                    if isinstance(info, dict):
-                        # maybe info itself is params
-                        return info
+    print("configdata:", data)
+    # If file maps dataset -> model -> info
+    if dataset_name in data:
+        ds_entry = data.get(dataset_name, {})
+        if isinstance(ds_entry, dict) and model_key in ds_entry:
+            info = ds_entry.get(model_key)
+            if isinstance(info, dict) and 'best_params' in info:
+                return info.get('best_params')
+            if isinstance(info, dict):
+                # maybe info itself is params
+                return info
 
-            # If file itself contains 'best_params' at top-level
-            if isinstance(data, dict) and 'best_params' in data:
-                return data.get('best_params')
+    # If file itself contains 'best_params' at top-level
+    if isinstance(data, dict) and 'best_params' in data:
+        return data.get('best_params')
 
     return None
 
@@ -163,7 +163,18 @@ def run_experiment(cfg: DictConfig) -> dict:
         Dictionary of experiment results
     """
     print(f"\n{'='*80}")
-    print(f"Running Hydra experiment: {cfg.dataset.name} + {cfg.model.name}")
+    # Normalize model and dataset names when users pass overrides that make them plain strings
+    if isinstance(cfg.model, str):
+        model_name = cfg.model
+    else:
+        model_name = getattr(cfg.model, 'name', str(cfg.model))
+
+    if isinstance(cfg.dataset, str):
+        dataset_name = cfg.dataset
+    else:
+        dataset_name = getattr(cfg.dataset, 'name', str(cfg.dataset))
+
+    print(f"Running Hydra experiment: {dataset_name} + {model_name}")
     print(f"{'='*80}\n")
     
     # Print configuration
@@ -175,42 +186,79 @@ def run_experiment(cfg: DictConfig) -> dict:
     results_dir = cfg.experiment.results_dir
     os.makedirs(results_dir, exist_ok=True)
     
-    # Get config hash or use default experiment name
-    config_hash = hash(OmegaConf.to_yaml(cfg.model))
-    experiment_name = f"{cfg.dataset.name}_{cfg.model.name}_{abs(config_hash) % 10000:04d}"
+    
+    # Load data
+    print("\nLoading data...")
+    # When users pass dataset as a plain string (e.g., dataset=diabetes), fall back to sensible defaults
+    if isinstance(cfg.dataset, str):
+        ds_random_state = int(getattr(cfg, 'seed', 42))
+        ds_test_size = 0.2
+        ds_scale_features = True
+    else:
+        ds_random_state = int(cfg.dataset.random_state)
+        ds_test_size = cfg.dataset.test_size
+        ds_scale_features = cfg.dataset.scale_features
+
+    loader = DataLoader(dataset_name, random_state=ds_random_state)
+    X, y = loader.load_data()
+    if X is None or y is None:
+        raise RuntimeError(f"Failed to load dataset '{dataset_name}'. Check data availability or DataLoader implementation.")
+    
+    # Save dataset to data folder
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+    os.makedirs(data_dir, exist_ok=True)
+    
+    # Save features and target
+    X_path = os.path.join(data_dir, f"{dataset_name}_X.csv")
+    y_path = os.path.join(data_dir, f"{dataset_name}_y.csv")
+    
+    X.to_csv(X_path, index=False)
+    y.to_csv(y_path, index=False, header=['target'])
+    print(f"Saved dataset to: {X_path} and {y_path}")
+    
+    # Number of repeated runs for averaging metrics
+    repeats = cfg.experiment.get('repeats', 10)
+    print(f"Dataset shape: {X.shape}")
+    print(f"Number of classes: {len(np.unique(y))}")
+    print(f"Running {repeats} repeats to compute mean and std for test metrics")
+
+    # Optionally load best params from tuning outputs
+    # Only load/apply best-params when the user did not explicitly pass a model name via CLI.
+    # This ensures we only override parameters for configured (_default) models, not ad-hoc CLI model strings.
+    best_params_override = None
+    explicit_best_file = cfg.experiment.get('best_params_file', None)
+    print("Model name:", model_name)
+    if not isinstance(cfg.model, str):
+        try:
+            best_params_override = _load_best_params(results_dir, dataset_name, model_name, explicit_file=explicit_best_file)
+            print("New param:", best_params_override)
+            if best_params_override is not None:
+                print(f"Loaded best params for model {model_name} from tuning outputs; applying overrides.")
+        except Exception as e:
+            print(f"Warning: failed to load best params file: {e}")
+    else:
+        # Model was specified directly on the CLI (e.g., model=MLP). Do not auto-apply tuning overrides in this case.
+        print("Model provided as CLI override; skipping automatic best-params loading.")
+    
+    # Initialize model
+    print(f"\nInitializing {model_name}...")
+    model, model_type, final_model_params = create_model(cfg, override_params=best_params_override)
+
+    # Now that we have final_model_params, create a short config hash and experiment directory
+    try:
+        import json as _json
+        config_hash = hash(f"{model_name}:{_json.dumps(final_model_params, sort_keys=True)}")
+    except Exception:
+        config_hash = hash(str(model_name))
+    experiment_name = f"{dataset_name}_{model_name}_{abs(config_hash) % 10000:04d}"
     experiment_dir = os.path.join(results_dir, experiment_name)
     os.makedirs(experiment_dir, exist_ok=True)
-    
+
     # Save configuration
     config_path = os.path.join(experiment_dir, 'hydra_config.yaml')
     with open(config_path, 'w') as f:
         f.write(OmegaConf.to_yaml(cfg))
     print(f"Saved configuration to: {config_path}")
-    
-    # Load data
-    print("\nLoading data...")
-    loader = DataLoader(cfg.dataset.name, random_state=cfg.dataset.random_state)
-    X, y = loader.load_data()
-    
-    # Number of repeated runs for averaging metrics
-    repeats = cfg.experiment.get('repeats', 10)
-    print(f"Dataset shape: {X.shape}")
-    print(f"Training set: {X_train.shape}, Test set: {X_test.shape}")
-    print(f"Number of classes: {len(np.unique(y))}")
-
-    # Optionally load best params from tuning outputs
-    best_params_override = None
-    explicit_best_file = cfg.experiment.get('best_params_file', None)
-    try:
-        best_params_override = _load_best_params(results_dir, cfg.dataset.name, cfg.model.name, explicit_file=explicit_best_file)
-        if best_params_override is not None:
-            print(f"Loaded best params for model {cfg.model.name} from tuning outputs; applying overrides.")
-    except Exception as e:
-        print(f"Warning: failed to load best params file: {e}")
-    
-    # Initialize model
-    print(f"\nInitializing {cfg.model.name}...")
-    model, model_type = create_model(cfg, override_params=best_params_override)
     
     evaluator = Evaluator()
     
@@ -222,11 +270,11 @@ def run_experiment(cfg: DictConfig) -> dict:
         print(f"\nRepeat {i+1}/{repeats}...")
         
         # Split data
-        loader.random_state = int(cfg.dataset.random_state) + i
+        loader.random_state = int(ds_random_state) + i
         data = loader.prepare_data(
             X, y,
-            test_size=cfg.dataset.test_size,
-            scale_features=cfg.dataset.scale_features
+            test_size=ds_test_size,
+            scale_features=ds_scale_features
         )
 
         X_train = data['X_train']
@@ -283,55 +331,69 @@ def run_experiment(cfg: DictConfig) -> dict:
     aggregated_train_metrics = {'runs': train_runs}
 
     # Generate explanations
-    print("\nGenerating explanations...")
-    try:
-        # SHAP explanations
-        shap_explainer = SHAPExplainer(model, X_train, model_type=model_type)
-        shap_values = shap_explainer.explain(X_test.head(100))
-        
-        # Save SHAP visualizations
-        shap_explainer.plot_summary(shap_values, X_test.head(100), save_path=experiment_dir)
-        shap_explainer.plot_importance(shap_values, X_test.head(100), save_path=experiment_dir)
-        
-        # Save SHAP feature importance
-        shap_importance = shap_explainer.get_feature_importance(shap_values, X_test.head(100))
-        shap_importance.to_csv(os.path.join(experiment_dir, 'shap_feature_importance.csv'), index=False)
-        
-        print("✓ SHAP explanations generated")
-    except Exception as e:
-        print(f"Warning: SHAP explanation failed: {e}")
+    # print("\nGenerating explanations...")
+    # try:
+    #     # SHAP explanations
+    #     shap_explainer = SHAPExplainer(model, X_train, model_type=model_type)
+    #     # compute SHAP values (populates internal state)
+    #     _ = shap_explainer.explain(X_test.head(100))
+
+    #     # Save SHAP visualizations
+    #     try:
+    #         shap_explainer.plot_summary(X_test.head(100), save_path=os.path.join(experiment_dir, 'shap_summary.png'))
+    #     except Exception as plot_err:
+    #         print(f"Warning: SHAP summary plot failed: {plot_err}")
+
+    #     try:
+    #         shap_explainer.plot_feature_importance(X_test.head(100), save_path=os.path.join(experiment_dir, 'shap_importance.png'))
+    #     except Exception as plot_err:
+    #         print(f"Warning: SHAP importance plot failed: {plot_err}")
+
+    #     # Save SHAP feature importance
+    #     try:
+    #         shap_importance = shap_explainer.get_feature_importance(X_test.head(100))
+    #         shap_importance.to_csv(os.path.join(experiment_dir, 'shap_feature_importance.csv'), index=False)
+    #     except Exception as imp_err:
+    #         print(f"Warning: Could not compute or save SHAP feature importance: {imp_err}")
+
+    #     print("✓ SHAP explanations generated")
+    # except Exception as e:
+    #     print(f"Warning: SHAP explanation failed: {e}")
     
-    # Try LIME if model supports it
-    if model_type in ['tree', 'deep']:
-        try:
-            lime_explainer = LIMEExplainer(model, X_train, mode='classification')
-            lime_importance = lime_explainer.explain_instance(X_test.iloc[0])
-            lime_explainer.plot_importance(lime_importance, save_path=experiment_dir)
-            print("✓ LIME explanations generated")
-        except Exception as e:
-            print(f"Warning: LIME explanation failed: {e}")
+    # # Try LIME if model supports it
+    # if model_type in ['tree', 'deep']:
+    #     try:
+    #         lime_explainer = LIMEExplainer(model, X_train, X_train.columns.tolist())
+    #         lime_importance = lime_explainer.get_feature_importance(X_test, num_samples=100)
+    #         try:
+    #             lime_explainer.plot_feature_importance(X_test, num_samples=100, save_path=os.path.join(experiment_dir, 'lime_importance.png'))
+    #         except Exception as plot_err:
+    #             print(f"Warning: LIME importance plot failed: {plot_err}")
+    #         print("✓ LIME explanations generated")
+    #     except Exception as e:
+    #         print(f"Warning: LIME explanation failed: {e}")
     
-    # Calculate interpretability metrics
-    print("\nCalculating interpretability metrics...")
-    try:
-        metrics_calc = InterpretabilityMetrics()
+    # # Calculate interpretability metrics
+    # print("\nCalculating interpretability metrics...")
+    # try:
+    #     metrics_calc = InterpretabilityMetrics()
         
-        # Feature importance stability (requires multiple runs)
-        stability_score = None
+    #     # Feature importance stability (requires multiple runs)
+    #     stability_score = None
         
-        # Get feature importance from SHAP
-        if 'shap_importance' in locals():
-            feature_names = shap_importance['feature'].tolist()
-            print(f"✓ Calculated interpretability metrics")
-    except Exception as e:
-        print(f"Warning: Interpretability metrics calculation failed: {e}")
+    #     # Get feature importance from SHAP
+    #     if 'shap_importance' in locals():
+    #         feature_names = shap_importance['feature'].tolist()
+    #         print(f"✓ Calculated interpretability metrics")
+    # except Exception as e:
+    #     print(f"Warning: Interpretability metrics calculation failed: {e}")
     
     # Prepare results
     results = {
         'experiment_name': experiment_name,
-        'dataset': cfg.dataset.name,
-        'model': cfg.model.name,
-        'model_params': OmegaConf.to_container(cfg.model.params, resolve=True),
+        'dataset': dataset_name,
+        'model': model_name,
+        'model_params': final_model_params,
         'best_params_loaded': best_params_override,
         'timestamp': datetime.now().isoformat(),
         'train_metrics': aggregated_train_metrics if 'aggregated_train_metrics' in locals() else train_metrics,
@@ -345,7 +407,7 @@ def run_experiment(cfg: DictConfig) -> dict:
     }
     
     # Save results
-    results_file = os.path.join(experiment_dir, 'results.json')
+    results_file = os.path.join(experiment_dir, dataset_name + '_' + model_name + '_results.json')
     with open(results_file, 'w') as f:
         json.dump(results, f, indent=2)
     

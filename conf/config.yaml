@@ -2,7 +2,7 @@
 # This file defines the default configuration and where to find other config groups
 
 defaults:
-  - model: xgboost_default
+  - model: catboost_default
   - _self_
 
 # Dataset configuration
@@ -16,6 +16,7 @@ dataset:
 experiment:
   results_dir: ../results
   rerun: false
+  best_params_file: results/hyperparameter_tuning_summary.json
 
 # Random seed for reproducibility
 seed: 42

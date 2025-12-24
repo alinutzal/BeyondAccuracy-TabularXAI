@@ -172,9 +172,9 @@ class DataLoader:
 
         return None, None, None
 
-    def _try_openml(self, name):
+    def _try_openml(self, name, version=None):
         try:
-            data = fetch_openml(name, as_frame=True, parser='auto')
+            data = fetch_openml(name, as_frame=True, parser='auto', version=version)
             X = data.data
             y = data.target
             # If target is not numeric, label-encode
@@ -192,7 +192,7 @@ class DataLoader:
     def _load_diabetes(self) -> Tuple[pd.DataFrame, pd.Series]:
         """Load a diabetes classification dataset.
 
-        Tries local CSVs first, then OpenML, otherwise falls back to breast_cancer.
+        Tries local CSVs first, then OpenML version 5, otherwise falls back to breast_cancer.
         """
         # Local filenames to try
         local_candidates = ['diabetes.csv', 'diabetes_data.csv', 'pima-indians-diabetes.csv', 'pima_diabetes.csv']
@@ -204,15 +204,14 @@ class DataLoader:
             self.numerical_features = X.select_dtypes(include=[np.number]).columns.tolist()
             return X, y
 
-        # Try OpenML common names
-        for name in ['diabetes']: #, 'diabetes_012_patient', 'pima-indians-diabetes']:
-            Xo, yo = self._try_openml(name)
-            if Xo is not None:
-                self.feature_names = Xo.columns.tolist()
-                self.target_name = 'target'
-                self.categorical_features = Xo.select_dtypes(include=['object', 'category']).columns.tolist()
-                self.numerical_features = Xo.select_dtypes(include=[np.number]).columns.tolist()
-                return Xo, yo
+        # Try OpenML version 5 (better diabetes dataset)
+        Xo, yo = self._try_openml('diabetes', version=5)
+        if Xo is not None:
+            self.feature_names = Xo.columns.tolist()
+            self.target_name = 'target'
+            self.categorical_features = Xo.select_dtypes(include=['object', 'category']).columns.tolist()
+            self.numerical_features = Xo.select_dtypes(include=[np.number]).columns.tolist()
+            return Xo, yo
 
         # fallback
         print('Warning: could not load diabetes dataset, falling back to breast_cancer')
@@ -277,7 +276,7 @@ class DataLoader:
         scale_features: bool = True
     ) -> Dict[str, Any]:
         """
-        Prepare data for training: split and optionally scale.
+        Prepare data for training: encode categoricals, split and optionally scale.
         
         Args:
             X: Features DataFrame
@@ -288,9 +287,19 @@ class DataLoader:
         Returns:
             Dictionary containing train/test splits and scaler
         """
+        # Encode categorical features
+        X_encoded = X.copy()
+        categorical_encoders = {}
+        
+        for col in self.categorical_features:
+            if col in X_encoded.columns:
+                le = LabelEncoder()
+                X_encoded[col] = le.fit_transform(X_encoded[col].astype(str))
+                categorical_encoders[col] = le
+        
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=self.random_state, stratify=y
+            X_encoded, y, test_size=test_size, random_state=self.random_state, stratify=y
         )
         
         scaler = None
@@ -319,7 +328,8 @@ class DataLoader:
             'y_test': y_test,
             'scaler': scaler,
             'feature_names': self.feature_names,
-            'target_name': self.target_name
+            'target_name': self.target_name,
+            'categorical_encoders': categorical_encoders
         }
     
     def get_dataset_info(self) -> Dict[str, Any]:

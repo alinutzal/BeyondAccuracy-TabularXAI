@@ -10,12 +10,8 @@ import torch.nn as nn
 import torch.optim as optim
 from typing import Dict, Any, Optional, Tuple
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, average_precision_score, brier_score_loss
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from src.models.kd import compute_distillation_loss, compute_consistency_penalty, should_enable_distillation, get_distillation_params
-from src.utils import FastTensorDataLoader
+from .kd import compute_distillation_loss, compute_consistency_penalty, should_enable_distillation, get_distillation_params
+from ..utils import FastTensorDataLoader
 
 # PyTorch Lightning imports
 try:
@@ -105,7 +101,7 @@ if LIGHTNING_AVAILABLE:
             # Get distillation parameters
             self.distill_enabled = self.distillation_cfg.get('enabled', False)
             if self.distill_enabled:
-                from kd import get_distillation_params
+                # get_distillation_params is imported at module level
                 self.distill_lambda, self.distill_temperature, self.consistency_penalty_cfg = get_distillation_params(
                     self.distillation_cfg, self.distill_enabled
                 )
@@ -257,7 +253,7 @@ if LIGHTNING_AVAILABLE:
             # Get distillation parameters
             self.distill_enabled = self.distillation_cfg.get('enabled', False)
             if self.distill_enabled:
-                from kd import get_distillation_params
+                # get_distillation_params is imported at module level
                 self.distill_lambda, self.distill_temperature, self.consistency_penalty_cfg = get_distillation_params(
                     self.distillation_cfg, self.distill_enabled
                 )

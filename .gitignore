@@ -223,3 +223,7 @@ checkpoints/
 lightning_logs/
 src/outputs/
 catboost_info/
+
+# Hydra outputs
+multirun/
+outputs/

@@ -1,0 +1,248 @@
+{
+  "breast_cancer": {
+    "xgboost": {
+      "best_score": -0.09877459860893577,
+      "best_params": {
+        "learning_rate": 0.05,
+        "max_depth": 6,
+        "min_child_weight": 1,
+        "subsample": 0.7,
+        "colsample_bytree": 0.7,
+        "reg_alpha": 0.5,
+        "reg_lambda": 5,
+        "n_estimators": 2000
+      }
+    },
+    "lightgbm": {
+      "best_score": 0.9923042254759706,
+      "best_params": {
+        "learning_rate": 0.1,
+        "num_leaves": 127,
+        "min_data_in_leaf": 10,
+        "feature_fraction": 0.9,
+        "bagging_fraction": 0.7,
+        "bagging_freq": 1,
+        "reg_alpha": 0.1,
+        "reg_lambda": 5,
+        "n_estimators": 1000
+      }
+    },
+    "catboost": {
+      "best_score": 0.9931572351932463,
+      "best_params": {
+        "rsm": 1.0,
+        "random_strength": 5,
+        "min_data_in_leaf": 200,
+        "learning_rate": 0.08,
+        "l2_leaf_reg": 20,
+        "max_depth": 8,
+        "bagging_temperature": 5
+      }
+    }
+  },
+  "adult_income": {
+    "xgboost": {
+      "best_score": -0.27629346092433665,
+      "best_params": {
+        "learning_rate": 0.01,
+        "max_depth": 8,
+        "min_child_weight": 1,
+        "subsample": 1.0,
+        "colsample_bytree": 0.7,
+        "reg_alpha": 0,
+        "reg_lambda": 1,
+        "n_estimators": 1000
+      }
+    },
+    "lightgbm": {
+      "best_score": 0.9273124535227429,
+      "best_params": {
+        "learning_rate": 0.01,
+        "num_leaves": 31,
+        "min_data_in_leaf": 10,
+        "feature_fraction": 0.9,
+        "bagging_fraction": 0.9,
+        "bagging_freq": 1,
+        "reg_alpha": 0.1,
+        "reg_lambda": 5,
+        "n_estimators": 2000
+      }
+    },
+    "catboost": {
+      "best_score": 0.9249167646794412,
+      "best_params": {
+        "rsm": 0.8,
+        "random_strength": 1,
+        "min_data_in_leaf": 50,
+        "learning_rate": 0.3,
+        "l2_leaf_reg": 3,
+        "max_depth": 5,
+        "bagging_temperature": 0.5
+      }
+    }
+  },
+  "bank_marketing": {
+    "xgboost": {
+      "best_score": -0.19764900569721777,
+      "best_params": {
+        "learning_rate": 0.01,
+        "max_depth": 8,
+        "min_child_weight": 1,
+        "subsample": 0.9,
+        "colsample_bytree": 0.9,
+        "reg_alpha": 0,
+        "reg_lambda": 10,
+        "n_estimators": 1000
+      }
+    },
+    "lightgbm": {
+      "best_score": 0.9345605951574196,
+      "best_params": {
+        "learning_rate": 0.01,
+        "num_leaves": 127,
+        "min_data_in_leaf": 10,
+        "feature_fraction": 0.9,
+        "bagging_fraction": 0.9,
+        "bagging_freq": 1,
+        "reg_alpha": 0.1,
+        "reg_lambda": 1,
+        "n_estimators": 2000
+      }
+    },
+    "catboost": {
+      "best_score": 0.9339800913625481,
+      "best_params": {
+        "rsm": 1.0,
+        "random_strength": 0.5,
+        "min_data_in_leaf": 50,
+        "learning_rate": 0.2,
+        "l2_leaf_reg": 1,
+        "max_depth": 9,
+        "bagging_temperature": 5
+      }
+    }
+  },
+  "diabetes": {
+    "xgboost": {
+      "best_score": -0.4846971596213702,
+      "best_params": {
+        "learning_rate": 0.01,
+        "max_depth": 4,
+        "min_child_weight": 1,
+        "subsample": 0.7,
+        "colsample_bytree": 0.7,
+        "reg_alpha": 0,
+        "reg_lambda": 5,
+        "n_estimators": 500
+      }
+    },
+    "lightgbm": {
+      "best_score": 0.8280113458382602,
+      "best_params": {
+        "learning_rate": 0.01,
+        "num_leaves": 63,
+        "min_data_in_leaf": 20,
+        "feature_fraction": 0.7,
+        "bagging_fraction": 0.7,
+        "bagging_freq": 1,
+        "reg_alpha": 0.1,
+        "reg_lambda": 5,
+        "n_estimators": 500
+      }
+    },
+    "catboost": {
+      "best_score": 0.8391553241359068,
+      "best_params": {
+        "rsm": 0.8,
+        "random_strength": 10,
+        "min_data_in_leaf": 10,
+        "learning_rate": 0.08,
+        "l2_leaf_reg": 5,
+        "max_depth": 8,
+        "bagging_temperature": 5
+      }
+    }
+  },
+  "in-vehicle_coupon": {
+    "xgboost": {
+      "best_score": -0.09877459860893577,
+      "best_params": {
+        "learning_rate": 0.05,
+        "max_depth": 6,
+        "min_child_weight": 1,
+        "subsample": 0.7,
+        "colsample_bytree": 0.7,
+        "reg_alpha": 0.5,
+        "reg_lambda": 5,
+        "n_estimators": 2000
+      }
+    },
+    "lightgbm": {
+      "best_score": 0.9923042254759706,
+      "best_params": {
+        "learning_rate": 0.1,
+        "num_leaves": 127,
+        "min_data_in_leaf": 10,
+        "feature_fraction": 0.9,
+        "bagging_fraction": 0.7,
+        "bagging_freq": 1,
+        "reg_alpha": 0.1,
+        "reg_lambda": 5,
+        "n_estimators": 1000
+      }
+    },
+    "catboost": {
+      "best_score": 0.9931572351932463,
+      "best_params": {
+        "rsm": 1.0,
+        "random_strength": 5,
+        "min_data_in_leaf": 200,
+        "learning_rate": 0.08,
+        "l2_leaf_reg": 20,
+        "max_depth": 8,
+        "bagging_temperature": 5
+      }
+    }
+  },
+  "credit_card_fraud": {
+    "xgboost": {
+      "best_score": -0.0025923250260689273,
+      "best_params": {
+        "learning_rate": 0.01,
+        "max_depth": 4,
+        "min_child_weight": 5,
+        "subsample": 0.7,
+        "colsample_bytree": 0.9,
+        "reg_alpha": 0.1,
+        "reg_lambda": 5,
+        "n_estimators": 2000
+      }
+    },
+    "lightgbm": {
+      "best_score": 0.9855048804043808,
+      "best_params": {
+        "learning_rate": 0.01,
+        "num_leaves": 31,
+        "min_data_in_leaf": 50,
+        "feature_fraction": 0.7,
+        "bagging_fraction": 0.7,
+        "bagging_freq": 1,
+        "reg_alpha": 0.1,
+        "reg_lambda": 5,
+        "n_estimators": 1000
+      }
+    },
+    "catboost": {
+      "best_score": 0.9870673466633536,
+      "best_params": {
+        "rsm": 1.0,
+        "random_strength": 10,
+        "min_data_in_leaf": 10,
+        "learning_rate": 0.15,
+        "l2_leaf_reg": 1,
+        "max_depth": 5,
+        "bagging_temperature": 1
+      }
+    }
+  }
+}

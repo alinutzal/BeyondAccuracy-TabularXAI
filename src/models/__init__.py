@@ -4,11 +4,15 @@ from .gradient_boosting import XGBoostClassifier, LightGBMClassifier, GradientBo
 from .deep_learning import MLPClassifier, TransformerClassifier, MLPDistillationClassifier, TransformerDistillationClassifier
 from .tab_pfn import TabPFNClassifier
 
+# Backwards compatible alias expected elsewhere in repo
+CatBoostClassifier = CatBoostModel
+
 __all__ = [
     'XGBoostClassifier',
     'LightGBMClassifier',
     'GradientBoostingClassifier',
     'CatBoostModel',
+    'CatBoostClassifier',
     'TabPFNClassifier',
     'MLPClassifier',
     'TransformerClassifier',
